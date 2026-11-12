@@ -1,0 +1,81 @@
+---
+/**
+ * 快捷跳转链接（Editorial 风格）
+ * Hero lead 段落下方的纯文字入口，数据来自 src/config/links.ts 的 quickLinks；
+ * 外部链接带 ↗ 指示，hover 时文字变色 + 下划线展开 + 箭头位移
+ */
+import Icon from './Icon.astro';
+import { getNavigation } from '../lib/queries';
+
+const pinnedLinks = [
+  { name: '工具', url: '/tools', external: false },
+  { name: '相册', url: '/gallery', external: false },
+  { name: 'Blog', url: '/blog', external: false },
+];
+const pinnedUrls = new Set(pinnedLinks.map((link) => link.url.replace(/\/$/, '')));
+const quickLinks = [
+  ...pinnedLinks,
+  ...getNavigation('quick').filter((link) => !pinnedUrls.has(link.url.replace(/\/$/, ''))),
+];
+---
+
+<nav class="quick-links" aria-label="快捷跳转">
+  {
+    quickLinks.map((link) => (
+      <a
+        href={link.url}
+        class="quick-link"
+        target={link.external ? '_blank' : undefined}
+        rel={link.external ? 'noopener noreferrer' : undefined}
+      >
+        {link.name}
+        {link.external && <Icon name="arrow-up-right" size={14} class="link-arrow" />}
+      </a>
+    ))
+  }
+</nav>
+
+<style>
+  .quick-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 36px;
+  }
+
+  /* 纯文字链接：muted 基础色，hover 变前景色 + 下划线展开 */
+  .quick-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--color-muted);
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0% 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition:
+      color var(--transition-fast),
+      background-size 0.3s ease;
+  }
+
+  .quick-link:hover {
+    color: var(--color-foreground);
+    background-size: 100% 1px;
+  }
+
+  .link-arrow {
+    transition: transform var(--transition-fast);
+  }
+
+  .quick-link:hover .link-arrow {
+    transform: translate(2px, -2px);
+  }
+
+  @media (max-width: 640px) {
+    .quick-links {
+      margin-top: 28px;
+    }
+  }
+</style>

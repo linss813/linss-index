@@ -1,0 +1,66 @@
+---
+import BlogList from './BlogList.astro';
+import PinnedArticles from './PinnedArticles.astro';
+import type { BlogFeedResult } from '../../types/blog';
+import type { BlogArticle } from '../../types/blog';
+
+interface Props {
+  feed: BlogFeedResult;
+  index?: number;
+  defaultCover: string;
+  pinned?: BlogArticle[];
+}
+
+const { feed, index, defaultCover, pinned = [] } = Astro.props;
+---
+
+<section class="blog-section container" aria-labelledby="latest-writing">
+  <div class="section-head">
+    <h2 id="latest-writing">
+      {index !== undefined && <span class="section-index">{String(index).padStart(2, '0')}</span>}
+      <span>Latest Writing</span>
+    </h2>
+    <a href="/blog">浏览文章 <span aria-hidden="true">→</span></a>
+  </div>
+  <p class="section-description">来自十三月杂记的最新文章。</p>
+  <PinnedArticles articles={pinned} defaultCover={defaultCover} />
+  {pinned.length > 0 && <h3 class="latest-label">最新文章 <span>不含置顶</span></h3>}
+  <BlogList feed={feed} compact defaultCover={defaultCover} />
+</section>
+
+<style>
+  .blog-section { margin-bottom: var(--space-section); }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 4px;
+  }
+  h2 {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .section-index { color: var(--color-accent); }
+  .section-head > a {
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    transition: color var(--transition-fast);
+  }
+  .section-head > a:hover { color: var(--color-accent); }
+  .section-description {
+    margin: 10px 0 24px;
+    color: var(--color-muted);
+    font-size: 0.875rem;
+  }
+  .latest-label { display: flex; align-items: baseline; gap: 8px; margin: 0 0 14px; font-size: .9rem; }
+  .latest-label span { color: var(--color-muted); font-family: var(--font-mono); font-size: .65rem; font-weight: 400; }
+</style>

@@ -1,0 +1,151 @@
+---
+/**
+ * 管理员登录页
+ * 独立页面，不使用 AdminLayout（未登录状态）
+ */
+import { getSiteConfig } from '../../lib/queries';
+import { adminUrl } from '../../lib/admin-path';
+const siteConfig = getSiteConfig();
+/** 登录成功后跳转的后台首页（随自定义后台路径变化） */
+const adminHome = adminUrl('');
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>登录 — {siteConfig.name} Admin</title>
+    {/* 注入当前生效的后台首页路径，供登录成功后跳转 */}
+    <script is:inline define:vars={{ adminBase: adminHome }}>
+      window.__ADMIN_BASE__ = adminBase;
+    </script>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #0f0f17;
+        color: #e0e0e8;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+      }
+      .login-card {
+        width: 360px;
+        max-width: 90vw;
+        background: #1a1a2e;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 40px 32px;
+      }
+      .login-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .login-sub {
+        font-size: 0.8125rem;
+        color: #6b6b80;
+        margin-bottom: 28px;
+      }
+      .field {
+        margin-bottom: 16px;
+      }
+      .field label {
+        display: block;
+        font-size: 0.8125rem;
+        color: #a0a0b8;
+        margin-bottom: 6px;
+      }
+      .field input {
+        width: 100%;
+        padding: 10px 12px;
+        background: #0f0f17;
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        color: #fff;
+        font-size: 0.9rem;
+        transition: border-color 0.15s;
+      }
+      .field input:focus {
+        outline: none;
+        border-color: #2563eb;
+      }
+      .btn-login {
+        width: 100%;
+        padding: 10px;
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-login:hover { background: #1d4ed8; }
+      .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
+      .error {
+        color: #ef4444;
+        font-size: 0.8125rem;
+        margin-bottom: 16px;
+        display: none;
+      }
+      .error.show { display: block; }
+    </style>
+  </head>
+  <body>
+    <div class="login-card">
+      <h1 class="login-title">{siteConfig.name}</h1>
+      <p class="login-sub">管理后台登录</p>
+      <div class="error" id="error"></div>
+      <form id="loginForm">
+        <div class="field">
+          <label for="username">用户名</label>
+          <input type="text" id="username" name="username" required autocomplete="username" />
+        </div>
+        <div class="field">
+          <label for="password">密码</label>
+          <input type="password" id="password" name="password" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn-login" id="btnLogin">登录</button>
+      </form>
+    </div>
+
+    <script>
+      const form = document.getElementById('loginForm') as HTMLFormElement;
+      const errorEl = document.getElementById('error') as HTMLDivElement;
+      const btn = document.getElementById('btnLogin') as HTMLButtonElement;
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errorEl.classList.remove('show');
+        btn.disabled = true;
+        btn.textContent = '登录中...';
+
+        const formData = new FormData(form);
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: formData.get('username'),
+            password: formData.get('password'),
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          window.location.href = (window as any).__ADMIN_BASE__ || '/admin';
+        } else {
+          errorEl.textContent = data.error || '登录失败';
+          errorEl.classList.add('show');
+          btn.disabled = false;
+          btn.textContent = '登录';
+        }
+      });
+    </script>
+  </body>
+</html>

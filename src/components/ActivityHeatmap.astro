@@ -1,0 +1,10 @@
+---
+import { sqlite } from '../lib/db';
+import { initCommunity } from '../services/community';
+initCommunity();
+const rows=sqlite.prepare(`SELECT date(published_at,'+8 hours') day,count(*) count FROM rss_articles WHERE visible=1 AND deleted_at IS NULL GROUP BY day UNION ALL SELECT date(created_at,'+8 hours') day,count(*) count FROM moments WHERE visible=1 AND deleted_at IS NULL GROUP BY day`).all() as {day:string;count:number}[];
+const counts=new Map<string,number>();for(const row of rows)counts.set(row.day,(counts.get(row.day)||0)+row.count);
+const days=Array.from({length:364},(_,i)=>{const date=new Date(Date.now()+8*3600000);date.setUTCDate(date.getUTCDate()-363+i);const day=date.toISOString().slice(0,10);return {day,count:counts.get(day)||0};});
+---
+<section class="heatmap" aria-label="最近一年发布记录"><header><strong>记录的足迹</strong><span>文章与日常 · 最近一年</span></header><div class="cells">{days.map(d=><span title={`${d.day} · ${d.count} 条记录`} style={`--intensity:${d.count?Math.min(1,.25+d.count*.15):0}`}><span class="sr">{d.day}：{d.count}</span></span>)}</div><small>少 ▫ ▪ 多</small></section>
+<style>.heatmap{margin:24px 0;padding:18px 0;overflow:auto}header{display:flex;justify-content:space-between;gap:12px;font-size:12px;margin-bottom:12px}header span,small{color:var(--color-muted)}.cells{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,9px);grid-auto-columns:9px;gap:4px;width:max-content}.cells>span{border-radius:2px;background:color-mix(in srgb,var(--color-accent) calc(var(--intensity)*100%),var(--color-border))}small{display:block;margin-top:8px;font-size:10px}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}</style>

@@ -1,0 +1,233 @@
+/* Shared editorial surface; retains the existing theme tokens and dark mode. */
+body {
+  font-feature-settings: 'kern';
+  text-rendering: optimizeLegibility;
+}
+main h1 {
+  font-family: Georgia, 'Noto Serif SC', 'Songti SC', serif !important;
+  letter-spacing: -0.045em !important;
+  font-weight: 500 !important;
+}
+.blog-head {
+  position: relative;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 32px;
+  padding-block: 80px 45px !important;
+}
+.blog-head h1 {
+  font-size: clamp(2.2rem, 4vw, 3.5rem) !important;
+  line-height: 1.25 !important;
+}
+.blog-head::after {
+  display: none !important;
+}
+.blog-kicker {
+  letter-spacing: 0.2em !important;
+  font-size: 11px !important;
+}
+.blog-filters a {
+  border-radius: 4px !important;
+}
+.blog-main .content-section {
+  margin-top: 42px;
+}
+.article-head h1 {
+  font-size: clamp(2.5rem, 5vw, 4.6rem);
+  line-height: 1.18;
+}
+.reading-layout {
+  position: relative;
+  max-width: 1160px;
+  margin: auto;
+  padding-inline: 24px;
+}
+.reading-toc {
+  position: sticky;
+  top: 100px;
+  float: left;
+  width: 170px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-muted);
+}
+.reading-toc strong {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.reading-toc nav {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+}
+.reading-toc a:hover {
+  color: var(--color-accent);
+}
+.reading-toc .subheading {
+  padding-left: 12px;
+}
+.article-content {
+  font-size: 17px !important;
+  line-height: 2 !important;
+  overflow-wrap: anywhere;
+}
+.article-content h2,
+.article-content h3 {
+  scroll-margin-top: 100px;
+  font-family: Georgia, 'Songti SC', serif;
+}
+.article-content h2 {
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 14px;
+  margin-top: 2.5em !important;
+}
+.article-content blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
+  font-family: Georgia, 'Songti SC', serif;
+}
+.article-content pre {
+  max-width: 100%;
+  overflow: auto;
+}
+.article-content img {
+  display: block;
+}
+.article-content a {
+  text-underline-offset: 4px;
+}
+@media (max-width: 1100px) {
+  .reading-toc {
+    display: none;
+  }
+  .reading-layout {
+    padding-inline: 0;
+  }
+}
+@media (max-width: 640px) {
+  .blog-head {
+    padding-top: 50px !important;
+  }
+  .article-content {
+    font-size: 16px !important;
+    line-height: 1.9 !important;
+  }
+}
+/* 阅读密度与可访问目录 */
+.article-shell.article-shell {
+  padding-top: clamp(42px, 6.6vw, 80px);
+}
+.article-head.article-head h1 {
+  font-family:
+    system-ui,
+    -apple-system,
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  font-size: clamp(28px, 3.3vw, 44px);
+  line-height: 1.35;
+  max-width: none;
+  letter-spacing: -0.025em;
+}
+.article-shell .article-content :is(h1, h2, h3, h4),
+.article-head.article-head h1 {
+  font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif !important;
+  font-variant-numeric: lining-nums tabular-nums !important;
+  font-feature-settings:
+    'lnum' 1,
+    'tnum' 1 !important;
+}
+.reading-width {
+  float: right;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.reading-wide .reading-layout {
+  max-width: 1500px;
+}
+.reading-wide .article-content {
+  max-width: 1120px;
+  width: calc(100% - 220px);
+  margin-left: 220px;
+}
+.toc-node button {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  line-height: 1.6;
+  padding: 5px 0;
+  cursor: pointer;
+  border: 0;
+  background: none;
+}
+.toc-node summary {
+  cursor: pointer;
+}
+.toc-node summary button {
+  display: inline;
+  text-align: left;
+}
+.toc-children {
+  margin-left: 12px;
+  padding-left: 10px;
+  border-left: 1px solid var(--color-border);
+}
+@media (max-width: 1100px) {
+  .reading-toc.reading-toc {
+    display: block;
+    position: static;
+    float: none;
+    width: auto;
+    margin: 0 20px 24px;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+  }
+  .reading-wide .article-content {
+    width: auto;
+    margin-inline: auto;
+  }
+}
+.archive-head.archive-head {
+  padding-top: calc(var(--space-section) * 0.667);
+}
+.feat.feat {
+  padding-block: 24px;
+  min-height: 0;
+}
+.feat.major.major {
+  padding-block: 30px;
+}
+.feat.major h2 {
+  font-size: clamp(28px, 4vw, 42px);
+}
+.article-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0;
+}
+.article-content li[data-type='taskItem']::before {
+  content: '☐';
+  margin-right: 9px;
+  color: var(--color-muted);
+}
+.article-content li[data-checked='true']::before {
+  content: '☑';
+}
+.article-content aside[data-callout] {
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-card));
+  border-radius: 8px;
+}
+.article-content details[data-fold] {
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+.article-content details summary {
+  font-weight: 600;
+  cursor: pointer;
+}

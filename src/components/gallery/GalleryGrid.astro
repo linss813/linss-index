@@ -1,0 +1,43 @@
+---
+/**
+ * 相册网格（Masonry 自适应图片流）
+ * 职责：图片列表布局与排序（CSS columns 实现，不引入第三方图库）
+ * Desktop 3 列 → Tablet（640–1024px）2 列 → Mobile（<640px）单列
+ */
+import GalleryItem from './GalleryItem.astro';
+import GalleryEmpty from './GalleryEmpty.astro';
+import type { GalleryItem as GalleryItemData } from '../../types/gallery';
+
+interface Props {
+  /** 公开照片列表（已按 sortOrder 排序） */
+  items: GalleryItemData[];
+}
+
+const { items } = Astro.props as Props;
+const EAGER_COUNT = 4; // 首屏图片立即加载，其余懒加载
+---
+
+{
+  items.length === 0 ? (
+    <GalleryEmpty />
+  ) : (
+    <div class="gallery-grid" id="galleryGrid" data-count={items.length}>
+      {items.map((item: GalleryItemData, i: number) => (
+        <GalleryItem item={item} index={i} eager={i < EAGER_COUNT} />
+      ))}
+    </div>
+  )
+}
+
+<style>
+  .gallery-grid {
+    columns: 3;
+    column-gap: 16px;
+  }
+  @media (max-width: 1024px) {
+    .gallery-grid { columns: 2; column-gap: 12px; }
+  }
+  @media (max-width: 640px) {
+    .gallery-grid { columns: 1; column-gap: 0; }
+  }
+</style>

@@ -1,0 +1,40 @@
+---
+import { getSidebarState } from '../services/sidebars';
+import { sqlite } from '../lib/db';
+import { initCommunity } from '../services/community';
+import SidebarCard from './SidebarCard.astro';
+initCommunity();const {document=getSidebarState().published,preview=false}=Astro.props;
+const data={articlesUpdated:sqlite.prepare('SELECT title,slug,published_at,updated_at,cover_url FROM rss_articles WHERE visible=1 AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 6').all(),articles:sqlite.prepare('SELECT title,slug,published_at,updated_at,cover_url FROM rss_articles WHERE visible=1 AND deleted_at IS NULL ORDER BY published_at DESC LIMIT 6').all(),moments:sqlite.prepare('SELECT id,content,images_json,created_at FROM moments WHERE visible=1 AND deleted_at IS NULL ORDER BY pinned DESC,id DESC LIMIT 6').all(),messages:sqlite.prepare('SELECT id,name,content,avatar FROM comments WHERE approved=1 AND deleted=0 AND article_id IS NULL AND moment_id IS NULL AND parent_id IS NULL ORDER BY id DESC LIMIT 6').all(),stats:[{label:'文章',count:(sqlite.prepare('SELECT count(*) n FROM rss_articles WHERE visible=1 AND deleted_at IS NULL').get() as any).n},{label:'动态',count:(sqlite.prepare('SELECT count(*) n FROM moments WHERE visible=1').get() as any).n},{label:'留言',count:(sqlite.prepare('SELECT count(*) n FROM comments WHERE approved=1 AND deleted=0').get() as any).n}]};
+---
+<div class:list={['home-sidebars',{'is-preview':preview}]} style={`--rail-width:${document.width}px`} data-width={document.width}>{['left','right'].map(side=><aside class={`home-rail rail-${side}`} aria-label={`${side==='left'?'左':'右'}侧功能栏`}>{document.modules.filter((m:any)=>m.side===side&&m.enabled).map((module:any)=><SidebarCard module={module} data={data} preview={preview}/>)}</aside>)}</div>
+<style>
+.home-rail{position:fixed;top:100px;width:var(--rail-width);max-height:calc(100dvh - 124px);overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:16px;z-index:5}.rail-left{left:calc(50% - 500px - var(--rail-width))}.rail-right{right:calc(50% - 500px - var(--rail-width))}
+@media(min-width:1440px){.home-rail :global(.desktop-hidden){display:none}}
+@media(min-width:1440px) and (max-width:1599px){.home-sidebars:not(.is-preview)[data-width="180"] .home-rail{width:180px}.home-sidebars:not(.is-preview)[data-width="180"] .rail-left{left:24px}.home-sidebars:not(.is-preview)[data-width="180"] .rail-right{right:24px}.home-sidebars:not(.is-preview):not([data-width="180"]){position:fixed;right:24px;top:100px;width:var(--rail-width);max-height:calc(100dvh - 124px);overflow:auto;display:grid;gap:16px;z-index:5}.home-sidebars:not(.is-preview):not([data-width="180"]) .home-rail{position:static;width:auto;max-height:none;overflow:visible}:global(body:has(.home-sidebars:not(.is-preview):not([data-width="180"]))>.hero),:global(body:has(.home-sidebars:not(.is-preview):not([data-width="180"]))>main),:global(body:has(.home-sidebars:not(.is-preview):not([data-width="180"]))>.footer){width:calc(100% - 330px)} }
+@media(min-width:1024px) and (max-width:1439px){.home-sidebars:not(.is-preview){position:fixed;right:24px;top:100px;width:220px;max-height:calc(100dvh - 124px);overflow:auto;display:grid;gap:16px;z-index:5}.home-rail{position:static;width:auto;max-height:none;overflow:visible}.home-rail :global(.tablet-hidden){display:none}:global(body:has(.home-sidebars:not(.is-preview))>.hero),:global(body:has(.home-sidebars:not(.is-preview))>main),:global(body:has(.home-sidebars:not(.is-preview))>.footer){width:calc(100% - 280px)}}
+@media(max-width:1023px){.home-sidebars{margin:24px auto;max-width:880px;padding:0 24px;display:flex;flex-wrap:wrap;gap:16px}.home-rail{display:contents}.home-sidebars :global(.sidebar-card){width:calc(50% - 8px);order:var(--mobile-order,0)}}
+@media(max-width:560px){.home-sidebars :global(.sidebar-card){width:100%}}
+.is-preview{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:0;padding:0;position:static;width:100%;max-height:none}.is-preview .home-rail{position:static;width:auto;max-height:none;overflow:visible}.is-preview :global(.sidebar-card){width:100%}
+@media(max-width:560px){.is-preview{grid-template-columns:1fr}}
+</style>
+<script>
+document.querySelectorAll<HTMLElement>('.home-rail').forEach((rail) => {
+  rail.tabIndex = 0;
+});
+document.querySelectorAll<HTMLElement>('.sidebar-card').forEach((card) => {
+  const button = card.querySelector<HTMLButtonElement>('.collapse-card');
+  if (!button) return;
+  const key = 'sidebar-collapsed-' + card.dataset.moduleId;
+  function collapse(hidden: boolean) {
+    card.classList.toggle('is-collapsed', hidden);
+    button!.setAttribute('aria-expanded', String(!hidden));
+    try {
+      localStorage.setItem(key, String(hidden));
+    } catch {}
+  }
+  try {
+    collapse(localStorage.getItem(key) === 'true');
+  } catch {}
+  button.onclick = () => collapse(!card.classList.contains('is-collapsed'));
+});
+</script>

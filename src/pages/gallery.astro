@@ -1,0 +1,119 @@
+---
+/**
+ * 相册页面（/gallery）
+ * Editorial 风格：Gallery 标题 + 说明 + Album 导航 + Masonry 图片流 + Lightbox
+ * 数据来源：services/gallery（数据库，仅公开数据），不在组件中硬编码业务数据
+ * Album 切换：/gallery?album={id}（SSR 过滤，保持简单路由）
+ */
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import GalleryGrid from '../components/gallery/GalleryGrid.astro';
+import GalleryViewer from '../components/gallery/GalleryViewer.astro';
+import { getGallery, getGalleryAlbums } from '../services/gallery';
+import { getSiteConfig, getSetting } from '../lib/queries';
+
+const siteConfig = getSiteConfig();
+/** 相册分组列表（含公开照片计数） */
+const albums = await getGalleryAlbums();
+/** 当前选中的相册（URL 参数 ?album=id，非法值按全部处理） */
+const albumParam = Astro.url.searchParams.get('album');
+const activeAlbumId = albumParam && /^\d+$/.test(albumParam) ? albumParam : null;
+/** 当前相册下的公开照片 */
+const items = await getGallery(activeAlbumId ? parseInt(activeAlbumId, 10) : undefined);
+/** 页面说明文案：后台可配置 */
+const galleryDescription = getSetting('gallery_description', 'A collection of moments, places and things worth remembering.');
+const seoTitle = getSetting('seo_gallery_title', `Gallery | ${siteConfig.name}`);
+const seoDescription = getSetting('seo_gallery_description', siteConfig.description);
+---
+
+<Layout title={seoTitle} description={seoDescription}>
+  <Header />
+  <main class="container gallery-main">
+    <header class="gallery-head">
+      <h1 class="gallery-title">Gallery</h1>
+      <p class="gallery-sub">{galleryDescription}</p>
+    </header>
+
+    {
+      albums.length > 0 && (
+        <nav class="album-nav" aria-label="相册分组">
+          <a href="/gallery" class:list={['album-chip', { active: !activeAlbumId }]}>
+            All{!activeAlbumId ? '' : ''}
+          </a>
+          {albums.map((a) => (
+            <a href={`/gallery?album=${a.id}`} class:list={['album-chip', { active: activeAlbumId === a.id }]}>
+              {a.name}
+              <span class="album-count">{a.photoCount ?? 0}</span>
+            </a>
+          ))}
+        </nav>
+      )
+    }
+
+    <GalleryGrid items={items} />
+  </main>
+  <Footer />
+  {items.length > 0 && <GalleryViewer items={items} />}
+</Layout>
+
+<style>
+  .gallery-main {
+    padding-bottom: calc(var(--space-section) * 0.6);
+  }
+  .gallery-head {
+    padding: var(--space-section) 0 calc(var(--space-section) * 0.3);
+  }
+  .gallery-title {
+    font-size: clamp(2.2rem, 6vw, 3.4rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+  }
+  .gallery-sub {
+    margin-top: 10px;
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+    max-width: 52ch;
+  }
+  .gallery-head::after {
+    content: '';
+    display: block;
+    height: 1px;
+    background: var(--color-border, rgba(24, 24, 27, 0.12));
+    margin-top: calc(var(--space-section) * 0.25);
+  }
+  /* Album 导航条：低饱和 chip，符合 Editorial 语言 */
+  .album-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: calc(var(--space-section) * 0.2);
+  }
+  .album-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 14px;
+    border: 1px solid var(--color-border, rgba(24, 24, 27, 0.15));
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    color: var(--color-foreground);
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+  }
+  .album-chip:hover { border-color: var(--color-accent); }
+  .album-chip.active {
+    background: var(--color-foreground);
+    color: var(--color-background);
+    border-color: var(--color-foreground);
+  }
+  .album-count {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    opacity: 0.55;
+  }
+  /* 移动端加大相册筛选 chip 的触控热区 */
+  @media (max-width: 640px) {
+    .album-chip { padding: 9px 16px; font-size: 0.875rem; }
+  }
+</style>

@@ -1,0 +1,96 @@
+---
+/**
+ * 服务列表行（Editorial 表格行）
+ * 桌面端三列：名称 / 描述 / 跳转箭头；手机端名称与描述上下堆叠；
+ * 行间以 hairline 分隔，无卡片背景，整行可点击
+ * @param service 服务数据（来自 src/config/services.ts）
+ */
+import Icon from './Icon.astro';
+import type { Service } from '../config/services';
+
+interface Props {
+  service: Service;
+}
+
+const { service } = Astro.props;
+const { name, description, url, external } = service;
+---
+
+<a
+  href={url}
+  class="row"
+  target={external ? '_blank' : undefined}
+  rel={external ? 'noopener noreferrer' : undefined}
+>
+  <span class="row-name">{name}</span>
+  <span class="row-desc">{description}</span>
+  <Icon name="arrow-up-right" size={16} class="row-arrow" />
+</a>
+
+<style>
+  .row {
+    display: grid;
+    grid-template-columns: minmax(120px, 200px) 1fr auto;
+    align-items: baseline;
+    gap: 24px;
+    padding: var(--row-padding);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .row-name {
+    font-size: 0.9375rem;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0% 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size 0.3s ease;
+  }
+
+  .row:hover .row-name {
+    background-size: 100% 1px;
+  }
+
+  .row-desc {
+    font-size: 0.875rem;
+    color: var(--color-muted);
+  }
+
+  .row-arrow {
+    color: var(--color-muted);
+    transition:
+      transform var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .row:hover .row-arrow {
+    color: var(--color-foreground);
+    transform: translate(2px, -2px);
+  }
+
+  /* 手机端：名称 + 箭头一行，描述换行，避免过窄列 */
+  @media (max-width: 640px) {
+    .row {
+      grid-template-columns: 1fr auto;
+      grid-template-areas:
+        'name arrow'
+        'desc arrow';
+      gap: 16px;
+    }
+
+    .row-name {
+      grid-area: name;
+      align-self: end;
+    }
+
+    .row-desc {
+      grid-area: desc;
+    }
+
+    .row-arrow {
+      grid-area: arrow;
+      align-self: start;
+    }
+  }
+</style>

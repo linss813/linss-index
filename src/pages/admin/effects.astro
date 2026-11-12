@@ -1,0 +1,254 @@
+---
+/**
+ * 效果管理页
+ * 管理外观配置中的装饰效果开关与布局参数
+ * - 装饰效果：backgroundGlow 背景光晕、noise 噪点、grid 网格
+ * - 布局参数：layout.mode 布局模式、layout.density 信息密度、layout.maxWidth 最大宽度
+ * 保存时整体序列化为 appearance 键写入 settings 表
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="效果" active="effects">
+  <form id="effectsForm" class="settings-form">
+    <!-- 装饰效果开关区 -->
+    <fieldset class="fieldset">
+      <legend>装饰效果</legend>
+      <p class="hint">控制前台背景装饰效果的显示，默认保持克制以提升性能。</p>
+
+      <div class="effect-card" data-key="backgroundGlow">
+        <div class="effect-info">
+          <span class="effect-name">背景光晕</span>
+          <span class="effect-desc">在背景上叠加柔和的辉光，增强氛围感</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="backgroundGlow" />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="effect-card" data-key="noise">
+        <div class="effect-info">
+          <span class="effect-name">噪点纹理</span>
+          <span class="effect-desc">叠加细微噪点，增加质感与层次</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="noise" />
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="effect-card" data-key="grid">
+        <div class="effect-info">
+          <span class="effect-name">网格背景</span>
+          <span class="effect-desc">显示淡淡的网格线，呈现工程感</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="grid" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </fieldset>
+
+    <!-- 布局参数区 -->
+    <fieldset class="fieldset">
+      <legend>布局参数</legend>
+
+      <div class="form-row">
+        <label>布局模式</label>
+        <select id="layout_mode">
+          <option value="mixed">mixed — 混合（Featured + 其他）</option>
+          <option value="grid">grid — 网格</option>
+          <option value="list">list — 列表</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>信息密度</label>
+        <select id="layout_density">
+          <option value="compact">compact — 紧凑</option>
+          <option value="comfortable">comfortable — 舒适</option>
+          <option value="spacious">spacious — 宽松</option>
+        </select>
+      </div>
+
+      <div class="form-row">
+        <label>最大宽度</label>
+        <input type="text" id="layout_maxWidth" placeholder="如 880px / 1120px / 1280px" />
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">保存设置</button>
+    </div>
+  </form>
+
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<style>
+  /* 参照 settings.astro 的表单样式 */
+  .settings-form { max-width: 720px; }
+  .fieldset {
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    background: var(--admin-bg);
+  }
+  .fieldset legend {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0 8px;
+    color: var(--admin-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .hint {
+    font-size: 0.8125rem;
+    color: var(--admin-muted);
+    margin-bottom: 16px;
+  }
+  .form-row { margin-bottom: 14px; }
+  .form-row label {
+    display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px;
+  }
+  .form-row input, .form-row select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border);
+    border-radius: 8px; font-size: 0.875rem; background: var(--admin-bg);
+  }
+  .form-row input:focus, .form-row select:focus { outline: none; border-color: var(--admin-primary); }
+  .form-actions { padding-left: 4px; }
+  .btn-primary {
+    padding: 10px 24px; background: var(--admin-primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+
+  /* 效果开关卡片 */
+  .effect-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border: 1px solid var(--admin-border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    background: var(--admin-bg);
+    transition: border-color 0.15s;
+  }
+  .effect-card:hover { border-color: var(--admin-primary); }
+  .effect-info { display: flex; flex-direction: column; gap: 2px; }
+  .effect-name { font-size: 0.875rem; font-weight: 600; color: #1a1a1a; }
+  .effect-desc { font-size: 0.75rem; color: var(--admin-muted); }
+
+  /* 自定义开关组件 */
+  .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: #ccc; border-radius: 24px; transition: background 0.2s;
+  }
+  .slider::before {
+    content: ''; position: absolute; height: 18px; width: 18px;
+    left: 3px; bottom: 3px; background: #fff; border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .switch input:checked + .slider { background: var(--admin-primary); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+
+  /* 轻提示 Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 20px; background: #1a1a2e; color: #fff;
+    border-radius: 8px; font-size: 0.875rem; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    opacity: 0; transform: translateY(20px); transition: all 0.3s; z-index: 300;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+</style>
+
+<script>
+  // 默认外观配置（用于缺失字段回退，保持与 config/appearance.ts 一致）
+  const defaultAppearance = {
+    effects: { backgroundGlow: false, noise: false, grid: false },
+    layout: { mode: 'mixed', density: 'comfortable', maxWidth: '880px' },
+  };
+
+  // 当前编辑中的外观对象（加载后填充，保存时序列化）
+  let appearanceObj: any = structuredClone(defaultAppearance);
+
+  const toast = document.getElementById('toast')!;
+
+  /**
+   * 显示 Toast 提示
+   * @param msg 提示文案
+   */
+  function showToast(msg: string): void {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  /**
+   * 从 GET /api/admin/settings 加载 appearance 键并解析为对象
+   * 解析失败时回退到默认配置
+   */
+  async function loadAppearance(): Promise<void> {
+    const res = await fetch('/api/admin/settings');
+    const data = await res.json();
+    const raw = data.appearance;
+    let parsed: any = null;
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = null;
+      }
+    }
+    // 合并默认配置，避免缺字段
+    appearanceObj = {
+      ...structuredClone(defaultAppearance),
+      ...(parsed || {}),
+      effects: { ...structuredClone(defaultAppearance.effects), ...(parsed?.effects || {}) },
+      layout: { ...structuredClone(defaultAppearance.layout), ...(parsed?.layout || {}) },
+    };
+
+    // 回填到表单控件
+    (document.getElementById('backgroundGlow') as HTMLInputElement).checked = !!appearanceObj.effects.backgroundGlow;
+    (document.getElementById('noise') as HTMLInputElement).checked = !!appearanceObj.effects.noise;
+    (document.getElementById('grid') as HTMLInputElement).checked = !!appearanceObj.effects.grid;
+    (document.getElementById('layout_mode') as HTMLSelectElement).value = appearanceObj.layout.mode || 'mixed';
+    (document.getElementById('layout_density') as HTMLSelectElement).value = appearanceObj.layout.density || 'comfortable';
+    (document.getElementById('layout_maxWidth') as HTMLInputElement).value = appearanceObj.layout.maxWidth || '880px';
+  }
+
+  // 表单提交：收集控件值写入 appearanceObj，整体序列化后保存到 settings 表
+  document.getElementById('effectsForm')!.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // 同步控件值到对象
+    appearanceObj.effects.backgroundGlow = (document.getElementById('backgroundGlow') as HTMLInputElement).checked;
+    appearanceObj.effects.noise = (document.getElementById('noise') as HTMLInputElement).checked;
+    appearanceObj.effects.grid = (document.getElementById('grid') as HTMLInputElement).checked;
+    appearanceObj.layout.mode = (document.getElementById('layout_mode') as HTMLSelectElement).value;
+    appearanceObj.layout.density = (document.getElementById('layout_density') as HTMLSelectElement).value;
+    appearanceObj.layout.maxWidth = (document.getElementById('layout_maxWidth') as HTMLInputElement).value;
+
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appearance: JSON.stringify(appearanceObj) }),
+    });
+
+    if (res.ok) {
+      showToast('效果设置已保存');
+    } else {
+      const data = await res.json();
+      showToast(data.error || '保存失败');
+    }
+  });
+
+  // 首次加载
+  loadAppearance();
+</script>

@@ -1,0 +1,107 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Moments from '../../components/Moments.astro';
+import ActivityHeatmap from '../../components/ActivityHeatmap.astro';
+import { communitySettings } from '../../services/community';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import BlogList from '../../components/blog/BlogList.astro';
+import PinnedArticles from '../../components/blog/PinnedArticles.astro';
+import BlogActivityFeed from '../../components/blog/BlogActivityFeed.astro';
+import { getBlogDefaultCover, getHomeArticles, getRssCategories, getSecondaryArticles } from '../../services/articles';
+import { getSiteConfig } from '../../lib/queries';
+
+const selected = Astro.url.searchParams.get('category');
+const selectedCategory = selected && /^\d+$/.test(selected) ? Number(selected) : undefined;
+const mineOnly = selected === 'mine';
+const home = getHomeArticles();
+const categories = getRssCategories();
+const secondary = getSecondaryArticles(selectedCategory);
+const defaultCover = getBlogDefaultCover();
+const feed = { title: '我的文章', description: '记录生活的切片，分享思考与创造。', articles: home.latest, sitemapAvailable: true, stale: false };
+const site = getSiteConfig();
+---
+
+<Layout title={`文章 | ${site.name}`} description={feed.description}>
+  <Header />
+  <main class="container blog-main">
+    <header class="blog-head">
+      <p class="blog-kicker">THE JOURNAL / 文字与日常</p>
+      <h1>在这里，<br/>留下思考<span>。</span></h1>
+      <p>{feed.description}</p>
+      <ActivityHeatmap/>
+    </header>
+    {communitySettings().blog && <Moments limit={10}/>}
+    <nav class="blog-filters" aria-label="文章分类">
+      <a href="/blog" class:list={{ active: !selected }}>全部</a>
+      <a href="/blog?category=mine" class:list={{ active: mineOnly }}>我的文章</a>
+      {categories.map((category) => (
+        <a href={`/blog?category=${category.id}`} class:list={{ active: selectedCategory === category.id }}>{category.name}</a>
+      ))}
+      <a class="archive-link" href="/blog/archive">归档与搜索 →</a>
+    </nav>
+
+    {!selectedCategory && (
+      <section class="content-section">
+        <div class="section-title"><div><span>01</span><h2>最近写下的</h2></div><p>原创与精选 · 慢慢阅读</p></div>
+        <PinnedArticles articles={home.pinned} defaultCover={defaultCover} />
+        <BlogList feed={feed} defaultCover={defaultCover} />
+      </section>
+    )}
+
+    {!mineOnly && (
+      <section class="content-section activity-section">
+        <div class="section-title"><div><span>{selectedCategory ? '01' : '02'}</span><h2>动态</h2></div><p>其他 RSS · 点击前往原文</p></div>
+        <BlogActivityFeed articles={secondary} defaultCover={defaultCover} />
+      </section>
+    )}
+  </main>
+  <Footer />
+</Layout>
+
+<style>
+  .blog-main { padding-bottom: calc(var(--space-section) * 0.6); }
+  .blog-head {
+    padding: var(--space-section) 0 calc(var(--space-section) * 0.38);
+  }
+  .blog-kicker {
+    margin-bottom: 12px;
+    color: var(--color-accent) !important;
+    font-family: var(--font-mono);
+    font-size: 0.75rem !important;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  h1 {
+    font-size: clamp(2.8rem, 8vw, 5.25rem);
+    font-weight: 750;
+    letter-spacing: -0.045em;
+    line-height: 1;
+  }
+  h1 span { color: var(--color-accent); }
+  .blog-head > p:last-child {
+    max-width: 52ch;
+    margin-top: 20px;
+    color: var(--color-muted);
+    font-size: 1rem;
+  }
+  .blog-head::after {
+    content: '';
+    display: block;
+    height: 1px;
+    margin-top: calc(var(--space-section) * 0.3);
+    background: var(--color-border);
+  }
+  .blog-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 42px; }
+  .blog-filters a { padding: 6px 13px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-muted); font-size: .78rem; transition: all var(--transition-fast); }
+  .blog-filters a:hover, .blog-filters a.active { border-color: var(--color-foreground); background: var(--color-foreground); color: var(--color-background); }
+  .blog-filters .archive-link { margin-left: auto; border-color: transparent; color: var(--color-accent); }
+  .blog-filters .archive-link:hover { border-color: var(--color-accent); background: transparent; color: var(--color-accent); }
+  .content-section { margin-bottom: var(--space-section); }
+  .section-title { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding-bottom: 10px; border-bottom: 1px solid var(--color-border); }
+  .section-title > div { display: flex; align-items: baseline; gap: 12px; }
+  .section-title span { color: var(--color-accent); font-family: var(--font-mono); font-size: .72rem; }
+  .section-title h2 { font-family: var(--font-mono); font-size: .82rem; letter-spacing: .1em; text-transform: uppercase; }
+  .section-title p { color: var(--color-muted); font-size: .75rem; }
+  @media (max-width: 640px) { .blog-filters .archive-link { width: 100%; margin: 6px 0 0; padding-left: 0; } .section-title p { display: none; } }
+</style>

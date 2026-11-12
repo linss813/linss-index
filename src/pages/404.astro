@@ -1,0 +1,71 @@
+---
+/**
+ * 404 页面
+ * 访问不存在的路径时展示，提供返回首页的引导
+ * Astro SSR 模式下自动作为全站 404 响应页
+ */
+import Layout from '../layouts/Layout.astro';
+import { getSiteConfig } from '../lib/queries';
+
+const siteConfig = getSiteConfig();
+---
+
+<Layout title={`404 | ${siteConfig.name}`} description="页面不存在" noindex>
+  <main class="notfound">
+    <p class="code">404</p>
+    <h1 class="title">页面不存在</h1>
+    <p class="desc">您访问的页面可能已被移动、删除，或地址有误。</p>
+    <div class="actions">
+      <a href="/" class="btn">返回首页</a>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  .notfound {
+    min-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 20px;
+    gap: 12px;
+  }
+  .code {
+    font-size: 5rem;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--accent, #2563eb);
+    letter-spacing: 0.05em;
+  }
+  .title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--foreground, #18181b);
+  }
+  .desc {
+    font-size: 0.9375rem;
+    color: var(--muted, #71717a);
+  }
+  .actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .btn {
+    padding: 10px 22px;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    background: var(--accent, #2563eb);
+    color: #fff;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.88; }
+  .btn-ghost {
+    background: transparent;
+    color: var(--foreground, #18181b);
+    border: 1px solid var(--border, rgba(24, 24, 27, 0.15));
+  }
+</style>

@@ -1,0 +1,137 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminUrl } from '../../lib/admin-path';
+---
+
+<AdminLayout title="RSS 文章" active="rss-articles">
+  <div class="page-head"><div><p class="eyebrow">Persisted Articles</p><p>管理已同步文章。隐藏会保留数据，删除会永久移除本地记录。</p></div><a class="btn-secondary" href={adminUrl('/rss')}>RSS 来源与同步</a></div>
+
+  <div class="list-toolbar">
+    <div class="list-filter">
+      <div class="admin-search"><input id="search" type="search" placeholder="搜索标题或正文…" /></div>
+      <label class="filter-control"><span>来源</span><select id="sourceFilter"><option value="">全部来源</option></select></label>
+    </div>
+    <span id="countText" class="page-summary"></span>
+  </div>
+
+  <div class="batch-bar">
+    <label class="batch-all-label"><input class="row-check" type="checkbox" id="checkAll" /> 全选本页</label>
+    <span class="batch-info">已选 <b id="selCount">0</b> 篇</span>
+    <button type="button" class="btn-icon" id="btnBatchShow" disabled>批量恢复</button>
+    <button type="button" class="btn-icon warning" id="btnBatchHide" disabled>批量隐藏</button>
+    <button type="button" class="btn-icon" id="btnBatchPin" disabled>批量置顶</button>
+    <button type="button" class="btn-icon ghost" id="btnBatchUnpin" disabled>取消置顶</button>
+    <button type="button" class="btn-icon danger" id="btnBatchDelete" disabled>批量删除</button>
+  </div>
+
+  <div class="table-wrap"><table class="data-table article-table"><thead><tr><th class="check-cell"><span class="sr-only">选择</span></th><th>文章</th><th>来源</th><th>发布时间</th><th>状态</th><th>置顶顺序</th><th>操作</th></tr></thead><tbody id="articleBody"><tr class="loading-row"><td colspan="7"><div class="table-state"><i class="table-spinner"></i><strong>正在加载文章</strong></div></td></tr></tbody></table></div>
+  <div class="table-footer"><span id="pageSummary" class="page-summary"></span><div class="pagination"><button class="page-btn" id="prev">←</button><span id="pageNumber" class="page-summary"></span><button class="page-btn" id="next">→</button></div></div>
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<style>
+  .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:18px; }
+  .page-head p:last-child { margin-top:3px; color:var(--admin-muted); font-size:.78rem; }
+  .eyebrow { color:var(--admin-primary); font-size:.68rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+  .btn-secondary { display:inline-flex; min-height:36px; align-items:center; padding:7px 13px; border:1px solid var(--admin-border); border-radius:8px; background:#fff; font-size:.78rem; font-weight:650; }
+  .check-cell { width:46px; text-align:center!important; }
+  .article-title-cell { min-width:300px; max-width:520px; }
+  .article-title-cell p { display:-webkit-box; margin-top:4px; overflow:hidden; color:var(--admin-muted); font-size:.7rem; line-height:1.4; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+  .source-name { color:var(--admin-text); font-size:.78rem; font-weight:600; }
+  .status-stack { display:flex; gap:5px; flex-wrap:wrap; }
+  .row-actions { display:flex; justify-content:flex-end; gap:5px; }
+  .row-actions button, .pin-order { min-height:30px; padding:5px 8px; border:1px solid var(--admin-border); border-radius:7px; background:#fff; color:#536078; font-size:.7rem; }
+  .row-actions .danger { color:#c2414b; }
+  .pin-order { width:66px; }
+  .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  @media(max-width:720px){.page-head{flex-direction:column}.article-table{min-width:900px!important}.btn-secondary{width:100%;justify-content:center}.list-toolbar{align-items:stretch!important;flex-direction:column}.list-filter{align-items:stretch!important;flex-direction:column}.admin-search{width:100%}.filter-control{justify-content:space-between}.filter-control select{flex:1}}
+</style>
+
+<script>
+  type Article={id:number;title:string;excerpt:string;sourceName:string;publishedAt?:string;visible:boolean;pinned:boolean;pinOrder:number;slug:string};
+  type Source={id:number;name:string};
+  type BatchAction='show'|'hide'|'pin'|'unpin'|'delete';
+  let page=1,totalPages=1,query='',sourceId='',timer=0;
+  const body=document.getElementById('articleBody')!;
+  const toast=document.getElementById('toast')!;
+  const checkAll=document.getElementById('checkAll') as HTMLInputElement;
+  const selCount=document.getElementById('selCount')!;
+  const batchButtonIds=['btnBatchShow','btnBatchHide','btnBatchPin','btnBatchUnpin','btnBatchDelete'];
+  const esc=(v:unknown)=>String(v??'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]!));
+  function notify(message:string,error=false){toast.textContent=message;toast.classList.toggle('error',error);toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),2200);}
+  async function api(url:string,options?:RequestInit){const response=await fetch(url,options);const data=await response.json();if(!response.ok)throw new Error(data.error||'操作失败');return data;}
+  function fmt(date?:string){return date?new Intl.DateTimeFormat('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(date)):'—';}
+
+  function refreshBatchState(){
+    const checked=body.querySelectorAll<HTMLInputElement>('.row-select:checked');
+    const boxes=body.querySelectorAll<HTMLInputElement>('.row-select');
+    selCount.textContent=String(checked.length);
+    batchButtonIds.forEach(id=>{(document.getElementById(id) as HTMLButtonElement).disabled=checked.length===0;});
+    checkAll.checked=boxes.length>0&&checked.length===boxes.length;
+    checkAll.indeterminate=checked.length>0&&checked.length<boxes.length;
+    checkAll.disabled=boxes.length===0;
+  }
+
+  function selectedIds(){return Array.from(body.querySelectorAll<HTMLInputElement>('.row-select:checked')).map(box=>Number(box.dataset.id)).filter(Number.isInteger);}
+
+  async function loadSources(){
+    try{
+      const sources=await api('/api/admin/rss/sources') as Source[];
+      const select=document.getElementById('sourceFilter') as HTMLSelectElement;
+      select.innerHTML='<option value="">全部来源</option>'+sources.map(source=>`<option value="${source.id}">${esc(source.name)}</option>`).join('');
+      select.value=sourceId;
+    }catch(error){notify(`来源列表加载失败：${(error as Error).message}`,true);}
+  }
+
+  async function load(){
+    checkAll.checked=false;checkAll.indeterminate=false;
+    body.innerHTML='<tr class="loading-row"><td colspan="7"><div class="table-state"><i class="table-spinner"></i><strong>正在加载文章</strong></div></td></tr>';
+    refreshBatchState();
+    try{
+      const params=new URLSearchParams({page:String(page)});
+      if(query)params.set('q',query);
+      if(sourceId)params.set('sourceId',sourceId);
+      const data=await api(`/api/admin/rss/articles?${params}`);
+      if(page>data.totalPages){page=data.totalPages;await load();return;}
+      totalPages=data.totalPages;
+      document.getElementById('countText')!.textContent=`共 ${data.total} 篇`;
+      document.getElementById('pageSummary')!.textContent=`第 ${data.page} 页，共 ${data.totalPages} 页`;
+      document.getElementById('pageNumber')!.textContent=`${data.page} / ${data.totalPages}`;
+      (document.getElementById('prev') as HTMLButtonElement).disabled=page<=1;
+      (document.getElementById('next') as HTMLButtonElement).disabled=page>=totalPages;
+      render(data.articles);
+    }catch(error){body.innerHTML=`<tr class="error-row"><td colspan="7"><div class="table-state"><strong>加载失败</strong><span>${esc((error as Error).message)}</span></div></td></tr>`;refreshBatchState();}
+  }
+
+  function render(items:Article[]){
+    if(!items.length){body.innerHTML='<tr class="empty-row"><td colspan="7"><div class="table-state"><strong>暂无文章</strong><span>当前搜索或来源筛选下没有文章。</span></div></td></tr>';refreshBatchState();return;}
+    body.innerHTML=items.map(a=>`<tr><td class="check-cell"><input class="row-check row-select" type="checkbox" data-id="${a.id}" aria-label="选择《${esc(a.title)}》"></td><td class="article-title-cell"><a class="cell-title" href="/blog/${encodeURIComponent(a.slug)}" target="_blank">${esc(a.title)}</a><p>${esc(a.excerpt)}</p></td><td><span class="source-name">${esc(a.sourceName)}</span></td><td class="cell-time">${fmt(a.publishedAt)}</td><td><div class="status-stack"><span class="badge ${a.visible?'badge-on':'badge-off'}">${a.visible?'显示':'隐藏'}</span>${a.pinned?'<span class="badge badge-warn">置顶</span>':''}</div></td><td><input class="pin-order" type="number" min="0" max="9999" value="${a.pinOrder}" data-order="${a.id}" aria-label="置顶顺序"></td><td><div class="row-actions"><button data-pin="${a.id}" data-value="${a.pinned?'false':'true'}">${a.pinned?'取消置顶':'置顶'}</button><button data-visible="${a.id}" data-value="${a.visible?'false':'true'}">${a.visible?'隐藏':'恢复'}</button><button class="danger" data-delete="${a.id}">删除</button></div></td></tr>`).join('');
+    refreshBatchState();
+  }
+
+  async function update(id:string,payload:Record<string,unknown>){await api(`/api/admin/rss/articles/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});await load();}
+
+  async function runBatch(action:BatchAction,label:string){
+    const ids=selectedIds();if(!ids.length)return;
+    if(action==='delete'&&!confirm(`确定永久删除选中的 ${ids.length} 篇本地文章吗？\n此操作不可恢复。`))return;
+    batchButtonIds.forEach(id=>{(document.getElementById(id) as HTMLButtonElement).disabled=true;});
+    try{
+      const data=await api('/api/admin/rss/articles/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids,action})});
+      notify(`${label} ${data.affected} 篇文章`);await load();
+    }catch(error){notify((error as Error).message,true);refreshBatchState();}
+  }
+
+  checkAll.addEventListener('change',()=>{body.querySelectorAll<HTMLInputElement>('.row-select').forEach(box=>{box.checked=checkAll.checked;});refreshBatchState();});
+  body.addEventListener('click',async e=>{const button=(e.target as HTMLElement).closest<HTMLButtonElement>('button');if(!button)return;try{if(button.dataset.pin)await update(button.dataset.pin,{pinned:button.dataset.value==='true'});if(button.dataset.visible)await update(button.dataset.visible,{visible:button.dataset.value==='true'});if(button.dataset.delete&&confirm('确定永久删除这篇本地文章吗？此操作与“隐藏”不同。')){await api(`/api/admin/rss/articles/${button.dataset.delete}`,{method:'DELETE'});notify('文章已删除');await load();}}catch(error){notify((error as Error).message,true);}});
+  body.addEventListener('change',async e=>{const target=e.target as HTMLElement;if(target.classList.contains('row-select')){refreshBatchState();return;}const input=target.closest<HTMLInputElement>('[data-order]');if(!input)return;try{await update(input.dataset.order!,{pinOrder:Number(input.value)||0});notify('置顶顺序已保存');}catch(error){notify((error as Error).message,true);}});
+  document.getElementById('btnBatchShow')!.addEventListener('click',()=>runBatch('show','已恢复'));
+  document.getElementById('btnBatchHide')!.addEventListener('click',()=>runBatch('hide','已隐藏'));
+  document.getElementById('btnBatchPin')!.addEventListener('click',()=>runBatch('pin','已置顶'));
+  document.getElementById('btnBatchUnpin')!.addEventListener('click',()=>runBatch('unpin','已取消置顶'));
+  document.getElementById('btnBatchDelete')!.addEventListener('click',()=>runBatch('delete','已删除'));
+  document.getElementById('search')!.addEventListener('input',e=>{clearTimeout(timer);timer=window.setTimeout(()=>{query=(e.target as HTMLInputElement).value.trim();page=1;load();},300);});
+  document.getElementById('sourceFilter')!.addEventListener('change',e=>{sourceId=(e.target as HTMLSelectElement).value;page=1;load();});
+  document.getElementById('prev')!.addEventListener('click',()=>{if(page>1){page--;load();}});
+  document.getElementById('next')!.addEventListener('click',()=>{if(page<totalPages){page++;load();}});
+  loadSources();load();
+</script>

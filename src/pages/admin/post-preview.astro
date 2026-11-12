@@ -1,0 +1,9 @@
+---
+import Article from '../blog/[slug].astro';
+import {getArticleDraftPreview} from '../../services/articles';
+import {adminUrl} from '../../lib/admin-path';
+const article=getArticleDraftPreview(Number(Astro.url.searchParams.get('id')));
+if(!article)return Astro.redirect(adminUrl('/posts'));
+Astro.response.headers.set('Cache-Control','private, no-store');
+---
+<Article article={article} preview/>

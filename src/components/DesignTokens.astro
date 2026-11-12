@@ -1,0 +1,247 @@
+---
+/**
+ * Design Token 注入器
+ * 运行时读取数据库中的主题配置与外观配置，计算全部 CSS Variables 并内联注入 <head>
+ * 优先级：默认配置 → 主题配置 → Appearance 配置
+ * 组件只允许引用这里的 Token，不允许写死颜色 / 圆角 / 阴影 / 间距
+ */
+import { getActiveTheme, getAppearance } from '../lib/queries';
+import type { ThemePalette } from '../config/theme';
+
+const { config: themes } = getActiveTheme();
+const appearance = getAppearance();
+
+/* ---------------- 颜色工具 ---------------- */
+
+/** RGB 分量（含 alpha） */
+interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+  a: number;
+}
+
+/** 解析颜色字符串为 RGB 分量，支持 #hex 与 rgb()/rgba() */
+function parseColor(input: string): Rgb | null {
+  const v = input.trim();
+  if (v.startsWith('#')) {
+    let hex = v.slice(1);
+    if (hex.length === 3 || hex.length === 4) {
+      hex = hex
+        .split('')
+        .map((c) => c + c)
+        .join('');
+    }
+    if (hex.length === 6 || hex.length === 8) {
+      const n = parseInt(hex.slice(0, 6), 16);
+      return {
+        r: (n >> 16) & 255,
+        g: (n >> 8) & 255,
+        b: n & 255,
+        a: hex.length === 8 ? parseInt(hex.slice(6), 16) / 255 : 1
+      };
+    }
+    return null;
+  }
+  const m = v.match(/^rgba?\(([^)]+)\)$/i);
+  if (m) {
+    const parts = m[1]
+      .split(/[,\s/]+/)
+      .filter(Boolean)
+      .map(Number);
+    if (parts.length >= 3) {
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
+    }
+  }
+  return null;
+}
+
+/** 按指定透明度输出 rgba 颜色 */
+function rgba(color: string, alpha: number): string {
+  const c = parseColor(color);
+  return c ? `rgba(${c.r}, ${c.g}, ${c.b}, ${alpha})` : color;
+}
+
+/** 调整透明度倍率（生成 hover 加深边框等） */
+function adjustAlpha(color: string, factor: number): string {
+  const c = parseColor(color);
+  if (!c) return color;
+  return `rgba(${c.r}, ${c.g}, ${c.b}, ${Math.min(1, Math.round(c.a * factor * 100) / 100)})`;
+}
+
+/** 将半透明前景色混合到背景色上，得到不透明等效色（solid 卡片模式使用） */
+function mixOver(fg: string, bg: string): string {
+  const f = parseColor(fg);
+  const b = parseColor(bg);
+  if (!f || !b) return fg;
+  const mix = (x: number, y: number) => Math.round(x * f.a + y * (1 - f.a));
+  return `rgb(${mix(f.r, b.r)}, ${mix(f.g, b.g)}, ${mix(f.b, b.b)})`;
+}
+
+/* ---------------- 档位映射表 ---------------- */
+
+/** 圆角档位 → [sm, md, lg] */
+const RADIUS: Record<string, [string, string, string]> = {
+  none: ['0px', '0px', '0px'],
+  small: ['8px', '12px', '14px'],
+  medium: ['12px', '16px', '22px'],
+  large: ['18px', '24px', '30px'],
+  pill: ['999px', '999px', '999px']
+};
+
+/** 阴影档位 */
+const SHADOW: Record<string, { sm: string; lg: string }> = {
+  none: { sm: 'none', lg: 'none' },
+  subtle: {
+    sm: '0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04)',
+    lg: '0 4px 10px rgba(0, 0, 0, 0.06), 0 16px 36px rgba(0, 0, 0, 0.09)'
+  },
+  medium: {
+    sm: '0 2px 4px rgba(0, 0, 0, 0.08), 0 6px 16px rgba(0, 0, 0, 0.08)',
+    lg: '0 8px 18px rgba(0, 0, 0, 0.12), 0 24px 48px rgba(0, 0, 0, 0.16)'
+  }
+};
+
+/** 密度档位 → 间距 Token（Editorial 排版：大留白节奏） */
+const DENSITY: Record<
+  string,
+  { card: string; row: string; gap: string; section: string; heroTop: string; heroBottom: string }
+> = {
+  compact: {
+    card: '18px 0',
+    row: '16px 0',
+    gap: '20px',
+    section: '56px',
+    heroTop: '96px',
+    heroBottom: '48px'
+  },
+  comfortable: {
+    card: '24px 0',
+    row: '20px 0',
+    gap: '28px',
+    section: '88px',
+    heroTop: '160px',
+    heroBottom: '96px'
+  },
+  spacious: {
+    card: '32px 0',
+    row: '26px 0',
+    gap: '36px',
+    section: '120px',
+    heroTop: '208px',
+    heroBottom: '128px'
+  }
+};
+
+/* ---------------- 字体 ---------------- */
+
+const SANS_FALLBACK =
+  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif";
+const MONO_FALLBACK = "ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace";
+
+/** 生成字体栈：自定义字体优先，回退系统字体 */
+function fontStack(name: string, fallback: string): string {
+  return name.trim() ? `'${name.trim()}', ${fallback}` : fallback;
+}
+
+/* ---------------- Token 生成 ---------------- */
+
+const theme = themes;
+const accentOverride = appearance.accent.trim();
+
+/** 单套色板 → 颜色 Token */
+function paletteVars(p: ThemePalette, accent: string): string {
+  const border = p.border;
+  return `
+    --color-background: ${p.background};
+    --color-foreground: ${p.foreground};
+    --color-muted: ${p.muted};
+    --color-accent: ${accent};
+    --color-accent-soft: ${rgba(accent, 0.1)};
+    --color-accent-glow: ${rgba(accent, 0.32)};
+    --color-glow: ${rgba(accent, 0.09)};
+    --color-card: ${p.card};
+    --color-border: ${border};
+    --color-border-strong: ${adjustAlpha(border, 1.9)};
+    --bg-grid-line: ${rgba(p.foreground, 0.045)};`;
+}
+
+/** 卡片视觉模式 → 卡片 Token（背景 / 边框 / 模糊 / 阴影） */
+function cardVars(p: ThemePalette, accent: string): string {
+  const { style, opacity, shadow } = appearance.card;
+  const shadowSet = SHADOW[shadow] ?? SHADOW.subtle;
+  let bg = 'transparent';
+  let bgHover = 'transparent';
+  let blur = 'none';
+  let border = p.border;
+  let borderHover = adjustAlpha(p.border, 1.9);
+
+  if (style === 'solid') {
+    bg = mixOver(p.card, p.background);
+    bgHover = bg;
+  } else if (style === 'glass') {
+    bg = rgba(p.card, opacity);
+    bgHover = rgba(p.card, Math.min(1, opacity + 0.14));
+    blur = 'blur(14px)';
+  } else if (style === 'border') {
+    bgHover = rgba(p.card, 0.45);
+  } else if (style === 'minimal') {
+    bgHover = rgba(p.card, Math.min(1, opacity + 0.1));
+    border = 'transparent';
+    borderHover = p.border;
+  }
+
+  return `
+    --card-bg: ${bg};
+    --card-bg-hover: ${bgHover};
+    --card-blur: ${blur};
+    --card-border: ${border};
+    --card-border-hover: ${borderHover};
+    --card-shadow: ${shadowSet.sm};
+    --card-shadow-hover: ${shadowSet.lg};
+    --accent-ring: ${rgba(accent, 0.32)};`;
+}
+
+/* 基础 Token（与深浅模式无关） */
+const radius = RADIUS[appearance.card.radius] ?? RADIUS.medium;
+const density = DENSITY[appearance.layout.density] ?? DENSITY.comfortable;
+const sansStack = fontStack(appearance.font.sans, SANS_FALLBACK);
+const headingStack = fontStack(appearance.font.heading || appearance.font.sans, SANS_FALLBACK);
+const monoStack = fontStack(appearance.font.mono, MONO_FALLBACK);
+
+const baseVars = `
+    --layout-max-width: ${appearance.layout.maxWidth};
+    --radius-sm: ${radius[0]};
+    --radius-md: ${radius[1]};
+    --radius-lg: ${radius[2]};
+    --radius-pill: 999px;
+    --shadow-sm: ${SHADOW[appearance.card.shadow]?.sm ?? SHADOW.subtle.sm};
+    --shadow-lg: ${SHADOW[appearance.card.shadow]?.lg ?? SHADOW.subtle.lg};
+    --card-padding: ${density.card};
+    --row-padding: ${density.row};
+    --grid-gap: ${density.gap};
+    --space-section: ${density.section};
+    --hero-pad-top: ${density.heroTop};
+    --hero-pad-bottom: ${density.heroBottom};
+    --font-sans: ${sansStack};
+    --font-heading: ${headingStack};
+    --font-mono: ${monoStack};
+    --transition-fast: 0.2s ease;`;
+
+/* 浅色 / 深色两套颜色 Token（dark 集合复用两次：手动深色 + 系统深色兜底） */
+const lightAccent = accentOverride || theme.light.accent;
+const darkAccent = accentOverride || theme.dark.accent;
+const lightVars = paletteVars(theme.light, lightAccent) + cardVars(theme.light, lightAccent);
+const darkVars = paletteVars(theme.dark, darkAccent) + cardVars(theme.dark, darkAccent);
+
+const tokenCss = `:root {${baseVars}${lightVars}
+}
+:root[data-mode='dark'] {${darkVars}
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-mode='light']) {${darkVars}
+  }
+}`;
+---
+
+<style is:inline set:html={tokenCss} />

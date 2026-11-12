@@ -1,0 +1,105 @@
+---
+/**
+ * 相册单张图片
+ * 职责：缩略图渲染（lazy）、alt 文案、点击事件标记（打开查看器由页面统一脚本处理）
+ * 缩略图优先（thumbnail 存在时列表用它，查看器再加载原图），降低首屏流量
+ */
+import type { GalleryItem } from '../../types/gallery';
+
+interface Props {
+  /** 照片数据 */
+  item: GalleryItem;
+  /** 在列表中的索引，用于查看器定位 */
+  index: number;
+  /** 首屏图片立即加载，其余懒加载（默认懒加载） */
+  eager?: boolean;
+}
+
+const { item, index, eager = false } = Astro.props;
+/** 列表展示用的图（缩略图优先） */
+const displaySrc = item.thumbnail || item.image;
+/** alt 优先用标题，其次描述，兜底 Gallery image */
+const alt = item.title || item.description || 'Gallery image';
+/** 服务端计算的图片宽高 → aspect-ratio（width / height），没有时给个 4:3 的兜底比例 */
+const hasSize = typeof item.width === 'number' && typeof item.height === 'number' && item.width > 0 && item.height > 0;
+const aspectRatio = hasSize ? `${item.width} / ${item.height}` : '4 / 3';
+---
+
+<figure class="gallery-item" data-index={index}>
+  <!--
+    使用 div + role=button 而非 <button>：
+    <button> 包裹 <img> 时部分浏览器（尤其 WebKit 内核）右键菜单不会出现
+    「复制图片地址 / 在新标签页打开图片」等原生图片选项；
+    改为可聚焦容器后，图片原生右键菜单完整可用，键盘 Enter/Space 由 GalleryViewer 统一处理。
+  -->
+  <div
+    class="gallery-item-btn"
+    data-viewer-trigger={index}
+    role="button"
+    tabindex="0"
+    aria-label={alt ? `查看：${alt}` : '查看图片'}
+  >
+    <img
+      src={displaySrc}
+      alt={alt}
+      loading={eager ? 'eager' : 'lazy'}
+      decoding="async"
+      width={hasSize ? item.width : undefined}
+      height={hasSize ? item.height : undefined}
+      style={`aspect-ratio: ${aspectRatio};`}
+    />
+    {
+      (item.title || item.date) && (
+        <figcaption>
+          {item.title && <span class="g-title">{item.title}</span>}
+          {item.date && <span class="g-date">{item.date}</span>}
+        </figcaption>
+      )
+    }
+  </div>
+</figure>
+
+<style>
+  .gallery-item { break-inside: avoid; margin: 0 0 16px; }
+  .gallery-item-btn {
+    display: block;
+    width: 100%;
+    padding: 0;
+    text-align: left;
+    cursor: zoom-in;
+  }
+  .gallery-item-btn img {
+    width: 100%;
+    height: auto;
+    /* 服务端 SSR 已注入精确 aspect-ratio（行内 style），这里仅作为兜底：图片未加载前预留占位、防止 CLS */
+    aspect-ratio: auto 4 / 3;
+    display: block;
+    border-radius: 4px;
+    transition: opacity var(--transition-fast);
+  }
+  .gallery-item-btn:hover img { opacity: 0.88; }
+  .gallery-item-btn:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+  figcaption {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 6px;
+  }
+  .g-title {
+    font-size: 0.8125rem;
+    color: var(--color-foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .g-date {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    color: var(--color-muted);
+    flex-shrink: 0;
+  }
+</style>

@@ -1,0 +1,128 @@
+---
+/**
+ * Featured 服务条目（Editorial 大字排版）
+ * 纯排版：大号服务名 + 描述 + 跳转箭头，顶部 hairline 分隔；
+ * 首要入口（major）使用更大字号并展示 "Read more" 提示，形成层级差异
+ * @param service 服务数据（来自 src/config/services.ts）
+ * @param major 是否为首要入口（仅第一个 featured 服务建议设为 true）
+ */
+import Icon from './Icon.astro';
+import type { Service } from '../config/services';
+
+interface Props {
+  service: Service;
+  major?: boolean;
+}
+
+const { service, major = false } = Astro.props;
+const { name, description, url, external } = service;
+---
+
+<a
+  href={url}
+  class:list={['feat', { major }]}
+  target={external ? '_blank' : undefined}
+  rel={external ? 'noopener noreferrer' : undefined}
+>
+  <span class="feat-head">
+    <span class="feat-name">{name}</span>
+    <Icon name="arrow-up-right" size={major ? 32 : 24} class="feat-arrow" />
+  </span>
+  <span class="feat-desc">{description}</span>
+  {
+    major && (
+      <span class="feat-more">
+        Read more
+        <Icon name="arrow-right" size={14} class="more-arrow" />
+      </span>
+    )
+  }
+</a>
+
+<style>
+  .feat {
+    display: block;
+    padding: clamp(28px, 5vw, 44px) 0;
+    border-top: 1px solid var(--color-border);
+  }
+
+  /* 区块末尾补底部 hairline，形成封闭感 */
+  .feat:last-child {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .feat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  /* 服务名：hover 时下划线自左展开（仅微交互） */
+  .feat-name {
+    font-family: var(--font-heading);
+    font-size: clamp(1.75rem, 4.5vw, 2.75rem);
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0% 2px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size 0.35s ease;
+  }
+
+  /* 首要入口：显著更大的字号，建立主要 / 次要层级 */
+  .feat.major .feat-name {
+    font-size: clamp(2.5rem, 6.5vw, 4.25rem);
+  }
+
+  .feat:hover .feat-name {
+    background-size: 100% 2px;
+  }
+
+  .feat-arrow {
+    flex-shrink: 0;
+    color: var(--color-muted);
+    transition:
+      transform var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .feat:hover .feat-arrow {
+    color: var(--color-foreground);
+    transform: translate(3px, -3px);
+  }
+
+  .feat-desc {
+    display: block;
+    margin-top: 12px;
+    max-width: 42em;
+    font-size: 0.9375rem;
+    color: var(--color-muted);
+  }
+
+  .feat-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 20px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    letter-spacing: 0.04em;
+    color: var(--color-muted);
+    transition: color var(--transition-fast);
+  }
+
+  .more-arrow {
+    transition: transform var(--transition-fast);
+  }
+
+  .feat:hover .feat-more {
+    color: var(--color-foreground);
+  }
+
+  .feat:hover .more-arrow {
+    transform: translateX(4px);
+  }
+</style>

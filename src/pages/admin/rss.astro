@@ -1,0 +1,136 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminUrl } from '../../lib/admin-path';
+---
+
+<AdminLayout title="RSS 订阅" active="rss">
+  <div class="page-actions">
+    <div><p class="page-eyebrow">Content Sources</p><p class="page-hint">管理主 RSS、动态来源与分类。文章同步后持久化保存在本地数据库。</p></div>
+    <div class="action-row"><a class="btn-secondary" href={adminUrl('/rss-articles')}>文章管理</a><button class="btn-secondary" id="syncAll">立即同步全部</button><button class="btn-primary" id="addSource">添加订阅源</button></div>
+  </div>
+
+  <section class="setting-card">
+    <div><h2>文章缺省封面</h2><p>文章和来源都没有封面时统一使用，可填写站内路径或 HTTP(S) 地址。</p></div>
+    <div class="cover-setting"><img id="defaultCoverPreview" src="/images/blog-default-cover.svg" alt="缺省封面预览" /><input id="defaultCover" type="text" placeholder="/images/blog-default-cover.svg" /><button id="saveCover">保存</button></div>
+  </section>
+
+  <section class="category-card">
+    <div class="section-head"><div><h2>RSS 分类</h2><p>删除分类只会解除来源绑定，不会删除来源或文章。</p></div><button class="btn-secondary small" id="addCategory">新增分类</button></div>
+    <div class="category-list" id="categoryList"><span class="loading-text">正在加载…</span></div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>订阅源</h2><p>主 RSS 进入本站详情页，次 RSS 以动态形式展示。</p></div></div>
+    <div class="table-wrap">
+      <table class="data-table rss-table">
+        <thead><tr><th>来源</th><th>类型</th><th>分类</th><th>状态</th><th>排序</th><th>操作</th></tr></thead>
+        <tbody id="sourceBody"><tr class="loading-row"><td colspan="6"><div class="table-state"><i class="table-spinner"></i><strong>正在加载订阅源</strong></div></td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="modal" id="sourceModal">
+    <div class="modal-content wide">
+      <div class="modal-head"><h2 id="sourceModalTitle">添加订阅源</h2><button type="button" data-close aria-label="关闭">×</button></div>
+      <form id="sourceForm">
+        <input type="hidden" id="sourceId" />
+        <div class="form-grid">
+          <label><span>网站名称 *</span><input id="sourceName" required maxlength="120" /></label>
+          <label><span>展示类型</span><select id="displayType"><option value="secondary">次 RSS · 动态</option><option value="primary">主 RSS · 完整文章</option></select></label>
+          <label class="full"><span>RSS / Atom 地址 *</span><input id="rssUrl" type="url" required placeholder="https://example.com/rss.xml" /></label>
+          <label><span>网站地址</span><input id="siteUrl" type="url" placeholder="https://example.com" /></label>
+          <label><span>Sitemap（可选）</span><input id="sitemapUrl" type="url" /></label>
+          <label><span>网站图标</span><input id="sourceIcon" type="url" /></label>
+          <label><span>来源封面</span><input id="sourceCover" type="url" /></label>
+          <label><span>分类</span><select id="categoryId"><option value="">未分类</option></select></label>
+          <label><span>排序</span><input id="sortOrder" type="number" value="0" /></label>
+          <label class="full"><span>网站描述</span><textarea id="sourceDescription" rows="3" maxlength="500"></textarea></label>
+          <label class="check full"><input id="sourceEnabled" type="checkbox" checked /><span>启用此订阅源</span></label>
+        </div>
+        <div class="form-actions"><button type="button" class="btn-secondary" id="testSource">测试连接</button><span id="testResult"></span><button type="button" class="btn-secondary" data-close>取消</button><button type="submit" class="btn-primary">保存</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="categoryModal">
+    <div class="modal-content compact"><div class="modal-head"><h2 id="categoryTitle">新增分类</h2><button type="button" data-category-close>×</button></div>
+      <form id="categoryForm"><input type="hidden" id="categoryEditId" /><label><span>分类名称</span><input id="categoryName" required maxlength="40" /></label><label><span>排序</span><input id="categoryOrder" type="number" value="0" /></label><div class="form-actions"><button type="button" class="btn-secondary" data-category-close>取消</button><button class="btn-primary">保存</button></div></form>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<style>
+  .page-actions, .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+  .page-eyebrow { color: var(--admin-primary); font-size: .68rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .page-hint, .section-head p, .setting-card p { margin-top: 3px; color: var(--admin-muted); font-size: .78rem; }
+  .action-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .btn-primary, .btn-secondary { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; padding: 7px 13px; border: 1px solid var(--admin-primary); border-radius: 8px; background: var(--admin-primary); color: #fff; font-size: .78rem; font-weight: 650; }
+  .btn-secondary { border-color: var(--admin-border); background: #fff; color: var(--admin-text); }
+  .btn-secondary:hover { border-color: #9eb2d7; background: #f7f9fd; }
+  .small { min-height: 32px; padding: 5px 10px; }
+  .setting-card, .category-card { margin-bottom: 22px; padding: 18px; border: 1px solid var(--admin-border); border-radius: 12px; background: var(--admin-bg); box-shadow: var(--admin-shadow-sm); }
+  .setting-card { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(360px, 1.25fr); align-items: center; gap: 22px; }
+  .setting-card h2, .section-head h2 { font-size: .9rem; }
+  .cover-setting { display: grid; grid-template-columns: 96px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+  .cover-setting img { width: 96px; height: 58px; object-fit: contain; border: 1px solid var(--admin-border); border-radius: 8px; background: #f4f6f9; }
+  .cover-setting input, .form-grid input, .form-grid select, .form-grid textarea, #categoryForm input { width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border); border-radius: 8px; outline: none; background: #fff; color: var(--admin-text); font-size: .8rem; }
+  .cover-setting button { min-height: 36px; padding: 0 12px; border-radius: 8px; background: var(--admin-text); color: #fff; font-size: .76rem; }
+  .category-list { display: flex; gap: 8px; flex-wrap: wrap; }
+  .category-chip { display: inline-flex; align-items: center; gap: 7px; padding: 6px 7px 6px 11px; border: 1px solid var(--admin-border); border-radius: 999px; background: #fafbfc; font-size: .75rem; }
+  .category-chip button { width: 24px; height: 24px; border-radius: 50%; color: var(--admin-muted); font-size: .72rem; }
+  .category-chip button:hover { background: #e9edf4; color: var(--admin-text); }
+  .source-cell { display: flex; align-items: center; gap: 10px; min-width: 260px; }
+  .source-cell img, .source-fallback { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; object-fit: contain; border: 1px solid var(--admin-border); border-radius: 9px; background: #f6f7f9; color: var(--admin-primary); font-weight: 700; }
+  .source-cell small { display: block; max-width: 320px; margin-top: 2px; overflow: hidden; color: var(--admin-muted); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+  .row-actions { display: flex; justify-content: flex-end; gap: 5px; }
+  .row-actions button { padding: 5px 8px; border: 1px solid var(--admin-border); border-radius: 7px; background: #fff; color: #506078; font-size: .72rem; }
+  .row-actions .danger { color: #c2414b; }
+  .modal { display: none; position: fixed; inset: 0; z-index: 220; align-items: center; justify-content: center; padding: 16px; background: rgba(15,23,42,.45); }
+  .modal.show { display: flex; }
+  .modal-content { width: min(760px, 100%); max-height: 92vh; padding: 22px; overflow-y: auto; border-radius: 14px; background: #fff; box-shadow: 0 24px 60px rgba(15,23,42,.22); }
+  .modal-content.compact { width: min(420px, 100%); }
+  .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .modal-head h2 { font-size: 1rem; }
+  .modal-head button { width: 34px; height: 34px; color: var(--admin-muted); font-size: 1.3rem; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-grid label, #categoryForm label { display: grid; gap: 5px; color: var(--admin-muted); font-size: .72rem; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-grid .check { display: flex; align-items: center; gap: 8px; }
+  .form-grid .check input { width: 16px; }
+  .form-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  #testResult { flex: 1; color: var(--admin-muted); font-size: .72rem; }
+  #categoryForm { display: grid; gap: 13px; }
+  .loading-text { color: var(--admin-muted); font-size: .75rem; }
+  @media (max-width: 720px) { .page-actions, .section-head { flex-direction: column; } .action-row { width: 100%; justify-content: flex-start; } .setting-card { grid-template-columns: 1fr; } .cover-setting { grid-template-columns: 74px minmax(0,1fr); } .cover-setting img { width: 74px; } .cover-setting button { grid-column: 2; } .form-grid { grid-template-columns: 1fr; } .form-grid .full { grid-column: auto; } .form-actions { flex-wrap: wrap; } #testResult { width: 100%; flex-basis: 100%; order: 2; } }
+</style>
+
+<script>
+  type Source = { id:number; name:string; rssUrl:string; siteUrl?:string|null; sitemapUrl?:string|null; description:string; icon?:string|null; cover?:string|null; categoryId?:number|null; categoryName?:string|null; displayType:string; sortOrder:number; enabled:number };
+  type Category = { id:number; name:string; sortOrder:number };
+  let sources: Source[] = []; let categories: Category[] = [];
+  const sourceModal = document.getElementById('sourceModal')!; const categoryModal = document.getElementById('categoryModal')!; const toast = document.getElementById('toast')!;
+  const esc = (value: unknown) => String(value ?? '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]!));
+  function notify(message:string, error=false){ toast.textContent=message; toast.classList.toggle('error',error); toast.classList.add('show'); setTimeout(()=>toast.classList.remove('show'),2600); }
+  async function jsonFetch(url:string, options?:RequestInit){ const response=await fetch(url,options); const data=await response.json(); if(!response.ok) throw new Error(data.error||'操作失败'); return data; }
+  async function loadAll(){
+    try { [sources,categories]=await Promise.all([jsonFetch('/api/admin/rss/sources'),jsonFetch('/api/admin/rss/categories')]); renderSources(); renderCategories(); fillCategorySelect(); const settings=await jsonFetch('/api/admin/settings'); const value=settings.blog_default_cover||'/images/blog-default-cover.svg'; (document.getElementById('defaultCover') as HTMLInputElement).value=value; (document.getElementById('defaultCoverPreview') as HTMLImageElement).src=value; }
+    catch(error){ notify((error as Error).message,true); }
+  }
+  function renderSources(){ const body=document.getElementById('sourceBody')!; if(!sources.length){body.innerHTML='<tr class="empty-row"><td colspan="6"><div class="table-state"><strong>暂无订阅源</strong><span>添加一个 RSS 或 Atom 地址开始同步。</span></div></td></tr>';return;} body.innerHTML=sources.map(s=>`<tr><td><div class="source-cell">${s.icon?`<img src="${esc(s.icon)}" alt="">`:`<span class="source-fallback">${esc(s.name.slice(0,1))}</span>`}<div><strong class="cell-title">${esc(s.name)}</strong><small>${esc(s.rssUrl)}</small></div></div></td><td><span class="badge ${s.displayType==='primary'?'badge-on':'badge-warn'}">${s.displayType==='primary'?'主 RSS':'次 RSS'}</span></td><td>${esc(s.categoryName||'未分类')}</td><td><span class="badge ${s.enabled?'badge-on':'badge-off'}">${s.enabled?'启用':'停用'}</span></td><td>${s.sortOrder}</td><td><div class="row-actions"><button data-sync="${s.id}">同步</button><button data-edit="${s.id}">编辑</button><button class="danger" data-delete="${s.id}">删除</button></div></td></tr>`).join(''); }
+  function renderCategories(){ const list=document.getElementById('categoryList')!; list.innerHTML=categories.length?categories.map(c=>`<span class="category-chip">${esc(c.name)}<button title="编辑" data-category-edit="${c.id}">✎</button><button title="删除" data-category-delete="${c.id}">×</button></span>`).join(''):'<span class="loading-text">暂无分类</span>'; }
+  function fillCategorySelect(){ const select=document.getElementById('categoryId') as HTMLSelectElement; select.innerHTML='<option value="">未分类</option>'+categories.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join(''); }
+  function openSource(source?:Source){ (document.getElementById('sourceForm') as HTMLFormElement).reset(); (document.getElementById('sourceId') as HTMLInputElement).value=source?String(source.id):''; document.getElementById('sourceModalTitle')!.textContent=source?'编辑订阅源':'添加订阅源'; const set=(id:string,value:unknown)=>{(document.getElementById(id) as HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement).value=String(value??'');}; if(source){set('sourceName',source.name);set('rssUrl',source.rssUrl);set('siteUrl',source.siteUrl);set('sitemapUrl',source.sitemapUrl);set('sourceDescription',source.description);set('sourceIcon',source.icon);set('sourceCover',source.cover);set('categoryId',source.categoryId);set('displayType',source.displayType);set('sortOrder',source.sortOrder);(document.getElementById('sourceEnabled') as HTMLInputElement).checked=!!source.enabled;} document.getElementById('testResult')!.textContent=''; sourceModal.classList.add('show'); }
+  document.getElementById('addSource')!.addEventListener('click',()=>openSource()); document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>sourceModal.classList.remove('show')));
+  document.getElementById('sourceForm')!.addEventListener('submit',async e=>{e.preventDefault();const id=(document.getElementById('sourceId') as HTMLInputElement).value;const val=(x:string)=>(document.getElementById(x) as HTMLInputElement).value.trim();const payload={name:val('sourceName'),rssUrl:val('rssUrl'),siteUrl:val('siteUrl'),sitemapUrl:val('sitemapUrl'),description:val('sourceDescription'),icon:val('sourceIcon'),cover:val('sourceCover'),categoryId:Number(val('categoryId'))||null,displayType:val('displayType'),sortOrder:Number(val('sortOrder'))||0,enabled:(document.getElementById('sourceEnabled') as HTMLInputElement).checked};try{await jsonFetch(id?`/api/admin/rss/sources/${id}`:'/api/admin/rss/sources',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});sourceModal.classList.remove('show');notify('订阅源已保存');await loadAll();}catch(error){notify((error as Error).message,true);}});
+  document.getElementById('testSource')!.addEventListener('click',async()=>{const result=document.getElementById('testResult')!;result.textContent='正在连接…';try{const data=await jsonFetch('/api/admin/rss/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rssUrl:(document.getElementById('rssUrl') as HTMLInputElement).value})});result.textContent=`连接成功：${data.title}，读取 ${data.articleCount} 篇`;}catch(error){result.textContent=(error as Error).message;}});
+  document.getElementById('sourceBody')!.addEventListener('click',async e=>{const target=(e.target as HTMLElement).closest<HTMLButtonElement>('button');if(!target)return;const edit=target.dataset.edit,del=target.dataset.delete,sync=target.dataset.sync;if(edit)openSource(sources.find(s=>s.id===Number(edit)));if(del&&confirm('确定删除这个 RSS 来源吗？已入库文章会保留。')){try{await jsonFetch(`/api/admin/rss/sources/${del}`,{method:'DELETE'});notify('来源已删除，历史文章已保留');await loadAll();}catch(error){notify((error as Error).message,true);}}if(sync){target.disabled=true;target.textContent='同步中';try{const data=await jsonFetch(`/api/admin/rss/sources/${sync}/sync`,{method:'POST'});notify(`同步完成：新增 ${data.created}，更新 ${data.updated}，跳过 ${data.skipped}`);}catch(error){notify((error as Error).message,true);}finally{target.disabled=false;target.textContent='同步';}}});
+  document.getElementById('syncAll')!.addEventListener('click',async e=>{const button=e.currentTarget as HTMLButtonElement;button.disabled=true;button.textContent='同步中…';try{const data=await jsonFetch('/api/admin/rss/sync',{method:'POST'});const created=data.results.reduce((n:number,r:any)=>n+r.created,0);const updated=data.results.reduce((n:number,r:any)=>n+r.updated,0);const skipped=data.results.reduce((n:number,r:any)=>n+r.skipped,0);notify(`同步完成：新增 ${created}，更新 ${updated}，跳过 ${skipped}${data.failures.length?`，失败 ${data.failures.length}`:''}`);}catch(error){notify((error as Error).message,true);}finally{button.disabled=false;button.textContent='立即同步全部';}});
+  function openCategory(category?:Category){(document.getElementById('categoryEditId') as HTMLInputElement).value=category?String(category.id):'';(document.getElementById('categoryName') as HTMLInputElement).value=category?.name??'';(document.getElementById('categoryOrder') as HTMLInputElement).value=String(category?.sortOrder??categories.length);document.getElementById('categoryTitle')!.textContent=category?'编辑分类':'新增分类';categoryModal.classList.add('show');}
+  document.getElementById('addCategory')!.addEventListener('click',()=>openCategory());document.querySelectorAll('[data-category-close]').forEach(el=>el.addEventListener('click',()=>categoryModal.classList.remove('show')));
+  document.getElementById('categoryForm')!.addEventListener('submit',async e=>{e.preventDefault();const id=(document.getElementById('categoryEditId') as HTMLInputElement).value;const payload={name:(document.getElementById('categoryName') as HTMLInputElement).value,sortOrder:Number((document.getElementById('categoryOrder') as HTMLInputElement).value)||0};try{await jsonFetch(id?`/api/admin/rss/categories/${id}`:'/api/admin/rss/categories',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});categoryModal.classList.remove('show');notify('分类已保存');await loadAll();}catch(error){notify((error as Error).message,true);}});
+  document.getElementById('categoryList')!.addEventListener('click',async e=>{const button=(e.target as HTMLElement).closest<HTMLButtonElement>('button');if(!button)return;if(button.dataset.categoryEdit)openCategory(categories.find(c=>c.id===Number(button.dataset.categoryEdit)));if(button.dataset.categoryDelete&&confirm('删除分类后，相关来源会变为未分类。继续吗？')){await jsonFetch(`/api/admin/rss/categories/${button.dataset.categoryDelete}`,{method:'DELETE'});notify('分类已删除');await loadAll();}});
+  document.getElementById('saveCover')!.addEventListener('click',async()=>{const value=(document.getElementById('defaultCover') as HTMLInputElement).value.trim();try{await jsonFetch('/api/admin/settings',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({blog_default_cover:value})});(document.getElementById('defaultCoverPreview') as HTMLImageElement).src=value||'/images/blog-default-cover.svg';notify('缺省封面已保存');}catch(error){notify((error as Error).message,true);}});
+  loadAll();
+</script>
+

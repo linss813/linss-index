@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Article cover</title>
+  <desc id="desc">Luen0511 article default cover</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#1f2937"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="78%" cy="18%" r="70%">
+      <stop offset="0" stop-color="#3b82f6" stop-opacity=".6"/>
+      <stop offset="1" stop-color="#3b82f6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="720" rx="32" fill="url(#bg)"/>
+  <rect width="1200" height="720" rx="32" fill="url(#glow)"/>
+  <path d="M80 112h1040M80 608h1040" stroke="#fff" stroke-opacity=".13"/>
+  <circle cx="108" cy="84" r="7" fill="#60a5fa"/>
+  <text x="80" y="88" fill="#d1d5db" font-family="ui-monospace, SFMono-Regular, Consolas, monospace" font-size="22" letter-spacing="5">LUEN0511 / WRITING</text>
+  <text x="80" y="354" fill="#f9fafb" font-family="system-ui, sans-serif" font-size="86" font-weight="700" letter-spacing="-4">十三月杂记<tspan fill="#60a5fa">.</tspan></text>
+  <text x="82" y="412" fill="#9ca3af" font-family="system-ui, sans-serif" font-size="26" letter-spacing="1">Thoughts, notes and things worth keeping.</text>
+</svg>

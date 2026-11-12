@@ -1,0 +1,12 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import Moments from '../../components/Moments.astro';
+import {sqlite} from '../../lib/db';
+import type {Moment} from '../../services/community';
+const count=(sqlite.prepare('SELECT count(*) n FROM moments WHERE visible=1 AND deleted_at IS NULL').get() as {n:number}).n;
+const pages=Math.max(1,Math.ceil(count/12));const page=Math.min(pages,Math.max(1,Math.floor(Number(Astro.url.searchParams.get('page'))||1)));
+const rows=sqlite.prepare('SELECT * FROM moments WHERE visible=1 AND deleted_at IS NULL ORDER BY pinned DESC,id DESC LIMIT 12 OFFSET ?').all((page-1)*12) as Moment[];
+---
+<Layout title="日常片刻"><Header/><main class="container" style="padding-top:32px"><a href="/blog">← 返回博客</a><Moments items={rows}/><nav class="comment-pagination" aria-label="日常分页">{page>1&&<a href={`?page=${page-1}`}>← 上一页</a>}<span>{page} / {pages}</span>{(page < pages)&&<a href={`?page=${page+1}`}>下一页 →</a>}</nav></main><Footer/></Layout>

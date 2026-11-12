@@ -1,0 +1,79 @@
+---
+/**
+ * 服务条目（网格排版版，用于分类分组网格）
+ * 纯文字条目：名称 + 描述 + 跳转箭头，顶部 hairline 分隔，
+ * 无卡片背景 / 阴影 / 图标底块，视觉由排版与留白承担
+ * @param service 服务数据（来自 src/config/services.ts）
+ */
+import Icon from './Icon.astro';
+import type { Service } from '../config/services';
+
+interface Props {
+  service: Service;
+}
+
+const { service } = Astro.props;
+const { name, description, url, external } = service;
+---
+
+<a
+  href={url}
+  class="entry"
+  target={external ? '_blank' : undefined}
+  rel={external ? 'noopener noreferrer' : undefined}
+>
+  <span class="entry-name">{name}</span>
+  <span class="entry-desc">{description}</span>
+  <Icon name="arrow-up-right" size={16} class="entry-arrow" />
+</a>
+
+<style>
+  .entry {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'name arrow'
+      'desc arrow';
+    align-content: start;
+    padding: var(--card-padding);
+    border-top: 1px solid var(--color-border);
+  }
+
+  .entry-name {
+    grid-area: name;
+    align-self: end;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0% 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    transition: background-size 0.3s ease;
+  }
+
+  .entry:hover .entry-name {
+    background-size: 100% 1px;
+  }
+
+  .entry-desc {
+    grid-area: desc;
+    margin-top: 6px;
+    font-size: 0.875rem;
+    color: var(--color-muted);
+  }
+
+  .entry-arrow {
+    grid-area: arrow;
+    align-self: start;
+    color: var(--color-muted);
+    transition:
+      transform var(--transition-fast),
+      color var(--transition-fast);
+  }
+
+  .entry:hover .entry-arrow {
+    color: var(--color-foreground);
+    transform: translate(2px, -2px);
+  }
+</style>

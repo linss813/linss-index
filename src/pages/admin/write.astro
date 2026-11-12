@@ -1,0 +1,756 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminUrl } from '../../lib/admin-path';
+---
+<AdminLayout title="撰写文章" active="posts">
+  <div class="document-bar"><button id="toggle-navigation" aria-label="收起侧栏" aria-expanded="true">☰</button><a href={adminUrl('/posts')}>← 文章管理</a><span> / </span><span>文档编辑</span><button id="new-post">＋ 新建</button></div>
+  <div class="studio"><aside id="post-list" aria-label="文章列表" hidden></aside><form id="editor">
+    <div class="document-tools"><span>✎ &nbsp; 你的下一篇故事</span><span id="word-count">0 字</span></div>
+    <label class="title-label"><span class="sr-only">文章标题</span><input id="post-title" maxlength="250" placeholder="无标题" /></label>
+    <div class="settings-anchor"><details class="document-settings"><summary>文章设置 <span>摘要、标签、封面与文章地址</span></summary>
+    <div class="fields"><label>文章地址<input id="post-slug" required pattern="[\p{L}\p{N}_-]+" placeholder="my-first-post" /></label><label>标签（逗号分隔）<input id="post-tags" placeholder="生活，技术，随笔" /></label></div>
+    <label>摘要<textarea id="post-summary" maxlength="1000" rows="2" placeholder="用两句话介绍这篇文章"></textarea></label>
+    <label>封面地址<input id="post-cover" placeholder="https://… 或 /uploads/…" /></label>
+    </details></div>
+    <div class="editor-label"><div class="mode-tabs" role="group" aria-label="编辑模式"><button type="button" id="mode-rich" aria-pressed="true">富文本</button><button type="button" id="mode-markdown" aria-pressed="false">Markdown</button></div><div><button type="button" id="import-md">↓ 导入</button><button type="button" id="export-md">↑ 导出</button><button type="button" id="toggle-outline" aria-pressed="true">目录</button><button type="button" id="toggle-category" aria-pressed="false">分类</button><button type="button" id="fullscreen">⛶ 专注</button></div></div>
+    <input type="file" id="markdown-file" accept=".md,.markdown,.json,text/markdown,application/json,text/plain" hidden />
+    <div class="writing-columns"><aside class="outline-rail"><h3>文章目录</h3><nav id="writing-outline" aria-label="章节导航"></nav></aside><div id="rich-editor"></div><aside class="category-rail"><h3>文章分类</h3><label for="post-category">分类名称</label><input id="post-category" placeholder="如：技术、生活" maxlength="100" /><p>多个分类用逗号分隔</p><div class="rail-tip">使用二级、三级标题组织内容，左侧会自动生成目录。</div></aside></div>
+    <div class="save-bar"><span id="save-status" role="status">尚未保存</span><button type="submit" form="editor" value="draft">保存草稿</button><button type="submit" form="editor" value="publish" class="publish">发布文章</button><a id="view-post" data-base={adminUrl('/post-preview')} hidden target="_blank">预览草稿 ↗</a></div>
+  </form></div>
+</AdminLayout>
+
+
+
+
+
+
+<script>
+import Editor from '../../lib/block-editor';
+import { renderHeadingTree } from '../../lib/heading-tree';
+type Post = {
+  id: number;
+  title: string;
+  slug: string;
+  summary: string;
+  tagsJson: string;
+  coverUrl: string | null;
+  contentHtml: string;
+  contentMarkdown: string | null;
+  visible: number;
+  draftVersion?: number;
+  saveVersion?: number;
+  contentJson?: string | null;
+};
+let baseVersion = 0,
+  draftVersion = 0,
+  autosaveTimer = 0,
+  saving = false,
+  editSequence = 0;
+let posts: Post[] = [],
+  current: number | undefined,
+  dirty = false,
+  loading = false;
+const $ = (id: string) => document.getElementById(id)!;
+const field = (id: string) => $(id) as HTMLInputElement;
+const status = $('save-status');
+document
+  .querySelector('.document-bar')!
+  .append(document.querySelector('.editor-label')!);
+document.querySelector('.save-bar')!.prepend($('word-count'));
+document
+  .querySelector('.document-bar')!
+  .append(document.querySelector('.save-bar')!);
+const columns = document.querySelector<HTMLElement>('.writing-columns')!;
+const handles = ['目录宽度', '分类宽度'].map((name, index) => {
+  const handle = document.createElement('div');
+  handle.className = 'column-resizer';
+  handle.tabIndex = 0;
+  handle.setAttribute('role', 'separator');
+  handle.setAttribute('aria-orientation', 'vertical');
+  handle.setAttribute('aria-label', name);
+  columns.insertBefore(
+    handle,
+    index === 0 ? $('rich-editor') : document.querySelector('.category-rail'),
+  );
+  return handle;
+});
+let railVisibility = { outline: false, category: false };
+try {
+  const saved = JSON.parse(localStorage.getItem('writing-panels-v2') || 'null');
+  if (
+    saved &&
+    typeof saved.outline === 'boolean' &&
+    typeof saved.category === 'boolean'
+  )
+    railVisibility = saved;
+} catch {}
+function applyRails() {
+  columns.dataset.outline = String(railVisibility.outline);
+  columns.dataset.category = String(railVisibility.category);
+  $('toggle-outline').setAttribute(
+    'aria-pressed',
+    String(railVisibility.outline),
+  );
+  $('toggle-category').setAttribute(
+    'aria-pressed',
+    String(railVisibility.category),
+  );
+  try {
+    localStorage.setItem('writing-panels-v2', JSON.stringify(railVisibility));
+  } catch {}
+  resizeColumns();
+}
+$('toggle-outline').onclick = () => {
+  railVisibility.outline = !railVisibility.outline;
+  applyRails();
+};
+$('toggle-category').onclick = () => {
+  railVisibility.category = !railVisibility.category;
+  applyRails();
+};
+let widths = [160, 180];
+try {
+  const saved = JSON.parse(
+    localStorage.getItem('writing-column-widths') || 'null',
+  );
+  if (
+    Array.isArray(saved) &&
+    saved.length === 2 &&
+    saved.every((v) => Number.isFinite(v) && v >= 100 && v <= 600)
+  )
+    widths = saved;
+} catch {}
+function resizeColumns() {
+  const available = columns.clientWidth - 400;
+  const sum =
+    (railVisibility.outline ? widths[0] : 0) +
+    (railVisibility.category ? widths[1] : 0);
+  const scale = Math.min(1, Math.max(200, available) / sum);
+  columns.style.setProperty(
+    '--outline-width',
+    `${Math.max(100, widths[0] * scale)}px`,
+  );
+  columns.style.setProperty(
+    '--category-width',
+    `${Math.max(100, widths[1] * scale)}px`,
+  );
+  $('editor').style.setProperty(
+    '--outline-width',
+    columns.style.getPropertyValue('--outline-width'),
+  );
+  handles.forEach((h, i) =>
+    h.setAttribute('aria-valuenow', String(Math.round(widths[i]))),
+  );
+}
+function rememberWidths() {
+  try {
+    localStorage.setItem('writing-column-widths', JSON.stringify(widths));
+  } catch {}
+}
+handles.forEach((h, index) => {
+  h.setAttribute('aria-valuemin', '100');
+  h.setAttribute('aria-valuemax', '600');
+  h.onpointerdown = (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    h.setPointerCapture(e.pointerId);
+    const start = e.clientX;
+    const width = Number.parseFloat(
+      getComputedStyle(columns).getPropertyValue(
+        index === 0 ? '--outline-width' : '--category-width',
+      ),
+    );
+    document.body.classList.add('resizing-columns');
+    h.onpointermove = (event) => {
+      widths[index] = Math.max(
+        100,
+        Math.min(
+          600,
+          width + (event.clientX - start) * (index === 0 ? 1 : -1),
+          columns.clientWidth - widths[1 - index] - 400,
+        ),
+      );
+      resizeColumns();
+    };
+    const end = () => {
+      h.onpointermove = null;
+      document.body.classList.remove('resizing-columns');
+      rememberWidths();
+    };
+    h.onpointerup = end;
+    h.onpointercancel = end;
+    h.onlostpointercapture = end;
+  };
+  h.onkeydown = (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(e.key)) return;
+    e.preventDefault();
+    widths[index] =
+      e.key === 'Home'
+        ? index === 0
+          ? 160
+          : 180
+        : Math.max(
+            100,
+            Math.min(
+              600,
+              widths[index] +
+                (e.key === 'ArrowRight' ? 1 : -1) * (index === 0 ? 1 : -1) * 20,
+            ),
+          );
+    resizeColumns();
+    rememberWidths();
+  };
+  h.ondblclick = () => {
+    widths = [160, 180];
+    resizeColumns();
+    rememberWidths();
+  };
+});
+new ResizeObserver(resizeColumns).observe(columns);
+applyRails();
+const editor = new Editor({
+  el: $('rich-editor'),
+  height: 'auto',
+  minHeight: '520px',
+  initialEditType: 'wysiwyg',
+  previewStyle: 'vertical',
+  language: 'zh-CN',
+  usageStatistics: false,
+  hideModeSwitch: false,
+  placeholder: '写下你的想法… 使用 Markdown 快捷语法创建标题、列表或引用。',
+  toolbarItems: [
+    ['heading', 'bold', 'italic', 'strike'],
+    ['hr', 'quote'],
+    ['ul', 'ol', 'task'],
+    ['table', 'image', 'link'],
+    ['code', 'codeblock'],
+  ],
+  events: {
+    change: () => {
+      if (!loading) {
+        dirty = true;
+        status.textContent = '有未保存的修改';
+      }
+    },
+  },
+});
+field('post-title').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.isComposing) {
+    event.preventDefault();
+    editor.moveCursorToEnd(true);
+  }
+});
+editor.on('change', () => {
+  $('word-count').textContent =
+    `${editor.getMarkdown().replace(/\s/g, '').length} 字`;
+});
+let outlineTimer = 0;
+function refreshOutline() {
+  const document = new DOMParser().parseFromString(
+    editor.getHTML(),
+    'text/html',
+  );
+  const headings = Array.from(
+    document.querySelectorAll<HTMLElement>('h1,h2,h3'),
+  );
+
+  if (!headings.length) {
+    $('writing-outline').replaceChildren();
+    const hint = window.document.createElement('p');
+    hint.textContent = '添加标题后显示章节';
+    $('writing-outline').append(hint);
+  }
+  if (headings.length)
+    renderHeadingTree($('writing-outline'), headings, (index) => {
+      if (editor.isMarkdownMode()) mode(false);
+      requestAnimationFrame(() => {
+        $('rich-editor')
+          .querySelectorAll(
+            ' .toastui-editor-ww-container h1,.toastui-editor-ww-container h2,.toastui-editor-ww-container h3',
+          )
+          [index]?.scrollIntoView({ block: 'center' });
+      });
+    });
+}
+editor.on('change', () => {
+  clearTimeout(outlineTimer);
+  outlineTimer = window.setTimeout(refreshOutline, 180);
+});
+const nativeFetch = window.fetch.bind(window);
+async function savePost(payload: Record<string, unknown>) {
+  return nativeFetch('/api/admin/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...payload,
+      draftVersion,
+      baseVersion,
+      categories: field('post-category').value,
+    }),
+  });
+}
+function payload(publish = false) {
+  return {
+    id: current,
+    title: field('post-title').value || '无标题',
+    slug: field('post-slug').value,
+    summary: field('post-summary').value,
+    tags: field('post-tags').value,
+    cover: field('post-cover').value,
+    content: editor.getHTML(),
+    markdown: editor.getMarkdown(),
+    blocks: editor.getJSON(),
+    categories: field('post-category').value,
+    publish,
+    draftOnly: !publish,
+  };
+}
+async function autosave() {
+  if (
+    saving ||
+    loading ||
+    !dirty ||
+    (!current &&
+      !editor.getMarkdown().trim() &&
+      !field('post-title').value.trim())
+  )
+    return;
+  saving = true;
+  const sequence = editSequence;
+  const id = current;
+  status.textContent = '正在保存草稿…';
+  try {
+    const r = await savePost(payload());
+    const p = await r.json();
+    if (r.status === 409) {
+      showConflict();
+      throw Error(p.error);
+    }
+    if (!r.ok) throw Error(p.error);
+    if (current !== id) return;
+    current = p.id;
+    baseVersion = p.saveVersion || 0;
+    const previewLink = $('view-post') as HTMLAnchorElement;
+    previewLink.hidden = false;
+    previewLink.href = `${previewLink.dataset.base}?id=${current}`;
+    draftVersion = p.draftVersion || 0;
+    history.replaceState(null, '', `${location.pathname}?id=${current}`);
+    if (sequence === editSequence) {
+      dirty = false;
+      try {
+        localStorage.removeItem('article-recovery-' + (id || 'new'));
+      } catch {}
+      status.textContent =
+        '草稿已自动保存 · ' + new Date().toLocaleTimeString();
+    }
+  } catch (e) {
+    status.textContent = (e as Error).message;
+  } finally {
+    saving = false;
+    if (dirty && sequence !== editSequence) scheduleSave();
+  }
+}
+function showConflict() {
+  if (document.getElementById('conflict-copy')) return;
+  const button = document.createElement('button');
+  button.id = 'conflict-copy';
+  button.type = 'button';
+  button.textContent = '另存为新文章';
+  button.onclick = () => {
+    current = undefined;
+    draftVersion = 0;
+    baseVersion = 0;
+    field('post-title').value += '（副本）';
+    field('post-slug').value += '-' + Date.now().toString(36);
+    dirty = true;
+    button.remove();
+    scheduleSave();
+  };
+  document.querySelector('.studio')?.prepend(button);
+}
+function scheduleSave() {
+  if (loading) return;
+  editSequence++;
+  clearTimeout(autosaveTimer);
+  try {
+    localStorage.setItem(
+      'article-recovery-' + (current || 'new'),
+      JSON.stringify({ ...payload(), time: Date.now() }),
+    );
+  } catch {}
+  autosaveTimer = window.setTimeout(autosave, 2000);
+}
+editor.on('change', scheduleSave);
+$('editor').addEventListener('input', scheduleSave);
+const mobileNavigation = window.matchMedia('(max-width: 768px)');
+function navigation(hidden: boolean) {
+  document.body.classList.toggle('writing-nav-hidden', hidden);
+  document.getElementById('sidebar')?.classList.toggle('open', mobileNavigation.matches && !hidden);
+  document.getElementById('sidebarOverlay')?.classList.toggle('show', mobileNavigation.matches && !hidden);
+  $('toggle-navigation').setAttribute('aria-expanded', String(!hidden));
+  $('toggle-navigation').setAttribute('aria-label', hidden ? '展开侧栏' : '收起侧栏');
+  if (!mobileNavigation.matches) {
+    try { localStorage.setItem('writing-nav-hidden', String(hidden)); } catch {}
+  }
+}
+function restoreNavigation() {
+  let hidden = mobileNavigation.matches;
+  if (!hidden) { try { hidden = localStorage.getItem('writing-nav-hidden') === 'true'; } catch {} }
+  navigation(hidden);
+}
+restoreNavigation();
+mobileNavigation.addEventListener('change', restoreNavigation);
+$('toggle-navigation').onclick = () => navigation(!document.body.classList.contains('writing-nav-hidden'));
+document.getElementById('sidebarOverlay')?.addEventListener('click', () => navigation(true));
+function mode(markdown: boolean) {
+  if (
+    editor.legacyHTML &&
+    !confirm(
+      '当前使用 HTML 兼容源文。切换块编辑可能简化不支持的内容，是否继续？',
+    )
+  )
+    return;
+  editor.changeMode(markdown ? 'markdown' : 'wysiwyg', true);
+  $('mode-rich').setAttribute('aria-pressed', String(!markdown));
+  $('mode-markdown').setAttribute('aria-pressed', String(markdown));
+}
+$('mode-rich').onclick = () => mode(false);
+$('mode-markdown').onclick = () => mode(true);
+const esc = (s: string) =>
+  s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ]!,
+  );
+async function load() {
+  const r = await fetch('/api/admin/posts');
+  if (!r.ok) throw new Error('读取文章失败，请重新登录');
+  posts = await r.json();
+  $('post-list').innerHTML = posts.length
+    ? posts
+        .map(
+          (p) =>
+            `<button type="button" data-id="${p.id}" class="post-item ${p.id === current ? 'selected' : ''}"><small>${p.visible ? '已发布' : '草稿'}</small><strong>${esc(p.title)}</strong></button>`,
+        )
+        .join('')
+    : '<p>还没有原创文章。<br/>从右侧开始第一篇。</p>';
+}
+function edit(p?: Post) {
+  if (dirty && !confirm('当前内容尚未保存，是否放弃修改？')) return;
+  clearTimeout(autosaveTimer);
+  editSequence++;
+  baseVersion = p?.saveVersion || 0;
+  draftVersion = p?.draftVersion || 0;
+  current = p?.id;
+  field('post-title').value = p?.title ?? '';
+  field('post-slug').value = p?.slug ?? `post-${Date.now()}`;
+  field('post-summary').value = p?.summary ?? '';
+  field('post-tags').value = p ? JSON.parse(p.tagsJson).join(', ') : '';
+  field('post-cover').value = p?.coverUrl ?? '';
+  field('post-category').value = JSON.parse(
+    (p as (Post & { categoriesJson?: string }) | undefined)?.categoriesJson ||
+      '[]',
+  ).join(', ');
+  loading = true;
+  if (p?.contentJson) {
+    try {
+      editor.setJSON(JSON.parse(p.contentJson).document);
+    } catch {
+      editor.setLegacyHTML(p.contentHtml);
+    }
+  } else if (p?.contentMarkdown != null)
+    editor.setMarkdown(p.contentMarkdown, false);
+  else if (p) {
+    if (/<(video|audio|iframe)\b/i.test(p.contentHtml))
+      editor.setLegacyHTML(p.contentHtml);
+    else editor.setHTML(p.contentHtml, false);
+  } else editor.setMarkdown('', false);
+  loading = false;
+  $('word-count').textContent =
+    `${editor.getMarkdown().replace(/\s/g, '').length} 字`;
+  dirty = false;
+  status.textContent = editor.legacyHTML
+    ? 'HTML 兼容编辑 · 原文完整保留'
+    : p
+      ? p.visible
+        ? '已发布'
+        : '草稿'
+      : '新文章';
+  const link = $('view-post') as HTMLAnchorElement;
+  link.hidden = !p;
+  link.href = p ? `${link.dataset.base}?id=${p.id}` : '#';
+}
+$('post-list').addEventListener('click', (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
+  if (b) edit(posts.find((p) => p.id === Number(b.dataset.id)));
+});
+$('new-post').onclick = () => edit();
+$('editor').addEventListener('input', () => {
+  dirty = true;
+  status.textContent = '有未保存的修改';
+});
+window.addEventListener('beforeunload', (e) => {
+  if (dirty) {
+    e.preventDefault();
+  }
+});
+$('import-md').onclick = () => field('markdown-file').click();
+async function importFile(file: File) {
+  if (file.size > 500000) {
+    status.textContent = '文件不能超过 500 KB';
+    return;
+  }
+  const text = await file.text();
+  let document: any;
+  let markdown = text;
+  try {
+    if (file.name.endsWith('.json')) {
+      const value = JSON.parse(text);
+      document = value.document || value.blocks || value;
+      if (document.type !== 'doc') throw Error('格式不正确');
+      markdown = 'JSON 完整文档 · ' + file.name;
+    }
+  } catch {
+    status.textContent = 'JSON 备份格式不正确';
+    return;
+  }
+  const dialog = window.document.createElement('dialog');
+  dialog.className = 'block-panel';
+  const h = window.document.createElement('h3');
+  h.textContent = '导入文章';
+  const preview = window.document.createElement('pre');
+  preview.textContent = markdown.slice(0, 600);
+  preview.style.cssText =
+    'max-height:240px;overflow:auto;white-space:pre-wrap;font:13px/1.7 system-ui';
+  dialog.append(h, preview);
+  const footer = window.document.createElement('footer');
+  for (const [label, newArticle] of [
+    ['新建文章', true],
+    ['替换当前正文', false],
+  ] as const) {
+    const button = window.document.createElement('button');
+    button.textContent = label;
+    button.onclick = () => {
+      if (newArticle) {
+        if (dirty && !confirm('当前未保存内容是否放弃？')) return;
+        dirty = false;
+        edit();
+      }
+      if (document) editor.setJSON(document);
+      else editor.setMarkdown(text);
+      if (newArticle) {
+        const title = /^#\s+(.+)$/m.exec(text);
+        field('post-title').value =
+          title?.[1] || file.name.replace(/\.(md|markdown|json)$/, '');
+      }
+      dirty = true;
+      scheduleSave();
+      dialog.close();
+    };
+    footer.append(button);
+  }
+  const cancel = window.document.createElement('button');
+  cancel.textContent = '取消';
+  cancel.onclick = () => dialog.close();
+  footer.append(cancel);
+  dialog.append(footer);
+  window.document.body.append(dialog);
+  dialog.onclose = () => dialog.remove();
+  dialog.showModal();
+}
+field('markdown-file').onchange = async () => {
+  const file = field('markdown-file').files?.[0];
+  if (file) await importFile(file);
+  field('markdown-file').value = '';
+};
+$('rich-editor').addEventListener('dragover', (event) => {
+  if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+});
+$('rich-editor').addEventListener(
+  'drop',
+  (event) => {
+    const file = event.dataTransfer?.files[0];
+    if (file && /\.(md|markdown|json)$/i.test(file.name)) {
+      event.preventDefault();
+      event.stopPropagation();
+      void importFile(file);
+    }
+  },
+  true,
+);
+function download(json: boolean) {
+  const content = json
+    ? JSON.stringify({ version: 1, document: editor.getJSON() }, null, 2)
+    : editor.getMarkdown();
+  const url = URL.createObjectURL(
+    new Blob([content], {
+      type: json ? 'application/json' : 'text/markdown;charset=utf-8',
+    }),
+  );
+  const a = window.document.createElement('a');
+  a.href = url;
+  a.download = `${field('post-slug').value || 'article'}.${json ? 'json' : 'md'}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+$('export-md').onclick = () => {
+  editor.panel(
+    '导出文章',
+    [
+      [
+        'format',
+        '填写 md 或 json（提示块、折叠块建议使用 JSON 完整备份）',
+        'md',
+      ],
+    ],
+    (values) => download(values.format === 'json'),
+  );
+};
+$('fullscreen').onclick = () => {
+  const full = document.body.classList.toggle('writing-focus');
+  $('fullscreen').textContent = full ? '⛶ 退出专注' : '⛶ 专注';
+};
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.body.classList.remove('writing-focus');
+    document.querySelector('.document-settings')?.removeAttribute('open');
+    $('fullscreen').textContent = '⛶ 专注';
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault();
+    ($('editor') as HTMLFormElement).requestSubmit(
+      document.querySelector<HTMLButtonElement>(
+        '.save-bar button[value=draft]',
+      )!,
+    );
+  }
+});
+$('editor').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (saving) {
+    status.textContent = '正在自动保存，请稍后再发布';
+    return;
+  }
+  clearTimeout(autosaveTimer);
+  saving = true;
+  const submittedSequence = editSequence;
+  const submittedId = current;
+  const buttons = document.querySelectorAll<HTMLButtonElement>(
+    '.save-bar button[type=submit]',
+  );
+  buttons.forEach((b) => (b.disabled = true));
+  status.textContent = '正在保存…';
+  try {
+    const publish =
+      (e as SubmitEvent).submitter?.getAttribute('value') === 'publish';
+    if (publish && !field('post-title').value.trim())
+      throw new Error('发布前请填写文章标题');
+    if (publish && !editor.getMarkdown().trim())
+      throw new Error('发布前请先填写文章正文');
+    const r = await savePost(payload(publish));
+    const p = await r.json();
+    if (r.status === 409) showConflict();
+    if (!r.ok) throw new Error(p.error);
+    try {
+      localStorage.removeItem('article-recovery-' + (current || 'new'));
+    } catch {}
+    if (current !== submittedId) return;
+    if (editSequence === submittedSequence) {
+      dirty = false;
+      current = p.id;
+      draftVersion = p.draftVersion || 0;
+      baseVersion = p.saveVersion || 0;
+      if (!field('post-title').value) field('post-title').value = p.title;
+      history.replaceState(null, '', `${location.pathname}?id=${current}`);
+      const previewLink = $('view-post') as HTMLAnchorElement;
+      previewLink.hidden = false;
+      previewLink.href = `${previewLink.dataset.base}?id=${current}`;
+      status.textContent = publish ? '文章已发布' : '草稿已保存';
+    } else {
+      current = p.id;
+      draftVersion = p.draftVersion || 0;
+      baseVersion = p.saveVersion || 0;
+      dirty = true;
+      status.textContent = '提交内容已保存，继续保存后续修改';
+      scheduleSave();
+    }
+    await load();
+  } catch (err) {
+    status.textContent = (err as Error).message;
+  } finally {
+    saving = false;
+    buttons.forEach((b) => (b.disabled = false));
+  }
+});
+edit();
+load()
+  .then(() => {
+    const id = Number(new URLSearchParams(location.search).get('id'));
+    if (id) {
+      const p = posts.find((p) => p.id === id);
+      edit(p);
+      if (p)
+        field('post-category').value = JSON.parse(
+          (p as Post & { categoriesJson: string }).categoriesJson || '[]',
+        ).join(', ');
+    }
+    refreshOutline();
+    try {
+      const key = 'article-recovery-' + (current || 'new');
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        const banner = document.createElement('div');
+        banner.className = 'recovery-banner';
+        banner.textContent =
+          '发现本地未完成的编辑 · ' +
+          new Date(cached.time).toLocaleString() +
+          ' ';
+        for (const [label, restore] of [
+          ['恢复编辑', true],
+          ['忽略并清除', false],
+        ] as const) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = label;
+          button.onclick = () => {
+            if (restore) {
+              field('post-title').value = cached.title || '';
+              field('post-slug').value = cached.slug || '';
+              field('post-summary').value = cached.summary || '';
+              field('post-tags').value = cached.tags || '';
+              field('post-cover').value = cached.cover || '';
+              field('post-category').value = cached.categories || '';
+              if (cached.blocks) editor.setJSON(cached.blocks);
+              else editor.setMarkdown(cached.markdown || '');
+              dirty = true;
+              scheduleSave();
+            } else localStorage.removeItem(key);
+            banner.remove();
+          };
+          banner.append(button);
+        }
+        document.querySelector('.studio')?.prepend(banner);
+      }
+    } catch {}
+  })
+  .catch((e) => (status.textContent = e.message));
+</script>
+
+
+
+
+
+<style is:global>
+body:has(.document-bar){background:#fff;color:#373b34}body:has(.document-bar) .content{padding:0;background:#fff}body:has(.document-bar) .topbar{display:none}
+body:has(.document-bar) .sidebar{transition:transform .22s ease}body:has(.document-bar) .admin-layout>.main{transition:margin-left .22s ease}
+body.writing-nav-hidden .sidebar{transform:translateX(-100%)}body.writing-nav-hidden .admin-layout>.main{margin-left:0}
+.document-bar{height:60px;position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;padding:0 28px;padding-right:440px;border-bottom:1px solid #e9ece5;background:#fffffff5;backdrop-filter:blur(12px);font-size:12px;color:#7a8275}.document-bar>span,.document-bar>#new-post{display:none}.document-bar a{white-space:nowrap}.document-bar #toggle-navigation{height:32px;width:32px;border:1px solid #e3e8df;border-radius:6px}.document-bar .editor-label{display:flex;flex:1;justify-content:space-between;gap:12px}.editor-label>div{display:flex;gap:4px}.editor-label button{padding:6px 9px;font-size:11px;white-space:nowrap;border-radius:5px}.mode-tabs{display:flex;background:#f4f6f0;padding:3px;border-radius:7px}.mode-tabs [aria-pressed=true]{background:white;box-shadow:0 1px 4px #24301b17}.studio{padding:22px 28px 0}.studio #post-list[hidden],.document-tools{display:none}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}.title-label{display:block;margin:0 0 12px}.studio #post-title{width:100%;font:700 32px/1.4 Arial,'PingFang SC',sans-serif;background:transparent;border:0;padding:0;box-shadow:none;color:#363d31}.studio #post-title::placeholder{color:#bec5b8}.document-settings{border-bottom:1px solid #edf0e8;padding:0 0 12px;margin-bottom:16px}.document-settings summary{font-size:12px;color:#8a9482;cursor:pointer}.document-settings summary span{font-size:11px;color:#a5ad9f;margin-left:12px}.document-settings[open]{padding:18px;background:#f8faf5;border-radius:10px}.document-settings label{font-size:12px;color:#66775c}.document-settings input,.document-settings textarea,#post-category{display:block;width:100%;margin-top:7px;padding:10px 12px;border:1px solid #e1e7dc;border-radius:7px;font:13px/1.5 inherit;background:#fff}.document-settings .fields{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:18px 0}.document-settings>label{display:block;margin:14px 0}
+.writing-columns{display:grid;grid-template-columns:var(--outline-width,160px) 12px minmax(320px,1fr) 12px var(--category-width,180px);gap:8px;align-items:stretch}.outline-rail,.category-rail{position:sticky;top:82px;align-self:start;min-width:0;padding-top:12px}.outline-rail h3,.category-rail h3{font-size:11px;color:#939e89;font-weight:500;margin:0 0 16px}.outline-rail button{border:0;background:none;text-align:left;font:12px/1.6 system-ui;padding:5px 0;color:#738368;overflow-wrap:anywhere}.outline-rail button:hover{color:#354b29}.outline-rail .toc-children{margin-left:8px;padding-left:12px;border-left:1px solid #e6ebe1}.outline-rail p,.category-rail p,.rail-tip{font-size:11px;line-height:1.8;color:#9ca692}.category-rail label{font-size:12px;color:#718167}.rail-tip{border-top:1px solid #e8ede3;margin-top:20px;padding-top:16px}.column-resizer{cursor:col-resize;touch-action:none;position:relative;min-height:560px}.column-resizer::after{content:'';position:absolute;width:1px;top:0;bottom:0;left:5px;background:#e9ede4}.column-resizer:hover::after,.column-resizer:focus-visible::after{background:#8ba17e;width:3px}.resizing-columns,.resizing-columns *{cursor:col-resize;user-select:none}#rich-editor{min-width:0}.save-bar{height:60px;display:flex;align-items:center;gap:10px;font:12px/1 system-ui}.save-bar>span,.save-bar>a{display:inline-flex;align-items:center;line-height:18px;color:#8c9783;max-width:190px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.save-bar #word-count{font-size:10px}.save-bar button{height:32px;display:inline-flex;align-items:center;justify-content:center;padding:0 14px;border:1px solid #dae2d4;border-radius:6px;font:500 12px/1 system-ui;background:white}.save-bar button.publish{background:#304733;color:white;border-color:#304733}.save-bar>[hidden]{display:none}.writing-focus .sidebar,.writing-focus .outline-rail,.writing-focus .category-rail,.writing-focus .column-resizer{display:none}.writing-focus .admin-layout>.main{margin-left:0}.writing-focus .writing-columns{display:block;max-width:960px;margin:auto}.writing-focus .title-label,.writing-focus .document-settings{max-width:960px;margin-inline:auto}
+@media(max-width:1200px){.document-bar{padding-right:300px}.save-bar #save-status,.save-bar #view-post{display:none}.document-bar #import-md,.document-bar #export-md{display:none}}
+@media(max-width:850px){.studio{padding:18px 16px}.writing-columns{grid-template-columns:minmax(0,1fr)}.outline-rail,.column-resizer{display:none}.category-rail{position:static}.document-bar{padding:0 16px;padding-right:200px}.document-bar #fullscreen,.save-bar #word-count{display:none}.save-bar{right:12px;gap:6px}.save-bar button{padding:0 10px}.studio #post-title{font-size:27px}.document-settings summary span{display:none}}
+@media(max-width:600px){.document-bar .editor-label{display:none}.document-bar{padding-right:180px}.document-settings .fields{grid-template-columns:1fr}.document-bar a{font-size:11px}}
+@media(prefers-reduced-motion:reduce){body:has(.document-bar) .sidebar,body:has(.document-bar) .admin-layout>.main{transition:none}}
+</style>

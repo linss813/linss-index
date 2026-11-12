@@ -1,0 +1,164 @@
+---
+/**
+ * 后台 Dashboard
+ * 显示统计数据概览：Services / Projects / Wallpapers 数量、当前主题、数据库状态
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { db, schema } from '../../lib/db';
+import { getSiteConfig, getActiveTheme } from '../../lib/queries';
+import { getSessionAdmin } from '../../lib/auth';
+import { adminUrl } from '../../lib/admin-path';
+
+const admin = await getSessionAdmin(Astro);
+const siteConfig = getSiteConfig();
+const activeTheme = getActiveTheme();
+
+const serviceCount = db.select().from(schema.services).all().length;
+const projectCount = db.select().from(schema.projects).all().length;
+const wallpaperCount = db.select().from(schema.wallpapers).all().length;
+const navCount = db.select().from(schema.navigation).all().length;
+---
+
+<AdminLayout title="仪表盘 Dashboard" active="dashboard">
+  <!-- 欢迎卡片：快速入口 -->
+  <div class="welcome-card">
+    <div class="welcome-text">
+      <h2 class="welcome-title">欢迎回来，{admin?.username ?? '管理员'}</h2>
+      <p class="welcome-desc">这里是站点运行概览。您可以从下方快捷入口开始管理内容与外观。</p>
+    </div>
+    <div class="welcome-actions">
+      <a href={adminUrl('/wallpapers')} class="btn-ghost">设置背景</a>
+      <a href={adminUrl('/theme')} class="btn-ghost">切换主题</a>
+      <a href={adminUrl('/settings')} class="btn-ghost">站点设置</a>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <a href={adminUrl('/services')} class="stat-card">
+      <span class="stat-value">{serviceCount}</span>
+      <span class="stat-label">服务 Services</span>
+    </a>
+    <a href={adminUrl('/projects')} class="stat-card">
+      <span class="stat-value">{projectCount}</span>
+      <span class="stat-label">项目 Projects</span>
+    </a>
+    <a href={adminUrl('/wallpapers')} class="stat-card">
+      <span class="stat-value">{wallpaperCount}</span>
+      <span class="stat-label">壁纸 Wallpapers</span>
+    </a>
+    <a href={adminUrl('/navigation')} class="stat-card">
+      <span class="stat-value">{navCount}</span>
+      <span class="stat-label">导航 Navigation</span>
+    </a>
+  </div>
+
+  <div class="info-panel">
+    <h2 class="panel-title">系统信息</h2>
+    <dl class="info-list">
+      <div class="info-row">
+        <dt>网站名称</dt>
+        <dd>{siteConfig.name}</dd>
+      </div>
+      <div class="info-row">
+        <dt>域名</dt>
+        <dd>{siteConfig.url}</dd>
+      </div>
+      <div class="info-row">
+        <dt>当前主题</dt>
+        <dd>{activeTheme.name}</dd>
+      </div>
+      <div class="info-row">
+        <dt>版本</dt>
+        <dd>2.0.0</dd>
+      </div>
+      <div class="info-row">
+        <dt>数据库</dt>
+        <dd>SQLite (正常)</dd>
+      </div>
+    </dl>
+  </div>
+</AdminLayout>
+
+<style>
+  /* 欢迎卡片 */
+  .welcome-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 24px;
+    margin-bottom: 24px;
+    background: linear-gradient(135deg, #2563eb 0%, #4c6ef5 100%);
+    border-radius: 12px;
+    color: #fff;
+  }
+  .welcome-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 4px; }
+  .welcome-desc { font-size: 0.8125rem; opacity: 0.85; }
+  .welcome-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-ghost {
+    padding: 8px 14px;
+    border: 1px solid rgba(255,255,255,0.5);
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.8125rem;
+    transition: background 0.15s;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.15); }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .stat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 24px;
+    background: var(--admin-bg);
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    transition: box-shadow 0.15s;
+  }
+  .stat-card:hover {
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  }
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--admin-primary);
+  }
+  .stat-label {
+    font-size: 0.8125rem;
+    color: var(--admin-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .info-panel {
+    background: var(--admin-bg);
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .panel-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--admin-border);
+    font-size: 0.875rem;
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-row dt { color: var(--admin-muted); }
+  .info-row dd { font-weight: 500; }
+</style>

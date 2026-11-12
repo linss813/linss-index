@@ -1,0 +1,140 @@
+---
+import {formatShanghai} from '../lib/datetime';
+import {publicCommentThreads,type PublicComment as Comment} from '../services/community';
+const {articleId=null,momentId=null}=Astro.props;
+const threadPage=publicCommentThreads(articleId,momentId,Number(Astro.url.searchParams.get('commentsPage'))||1);
+const {rows,page,total:totalRoots}=threadPage;const index=new Map(rows.map(row=>[row.id,row]));
+function rootOf(row:Comment){let current=row;const seen=new Set<number>();while(current.parent_id&&!seen.has(current.id)){seen.add(current.id);const parent=index.get(current.parent_id);if(!parent)break;current=parent;}return current.id;}
+const roots=rows.filter(row=>row.parent_id===null).reverse();
+function pageUrl(n:number){const url=new URL(Astro.url);url.searchParams.set('commentsPage',String(n));return url.pathname+url.search+'#comments';}
+function hue(row:Comment){let n=0;for(const c of row.avatar||String(row.id))n=(n*31+c.charCodeAt(0))>>>0;return n%360;}
+---
+<section class="comments" id="comments"><header><h2>{momentId?'动态评论':articleId?'文章评论':'访客留言'} <small>{totalRoots} 段对话</small></h2><p>留下你的想法，与这里的人聊聊。</p></header><div class="threads">{roots.length?roots.map(root=><div class="thread">{[root,...rows.filter(r=>r.id!==root.id&&rootOf(r)===root.id)].map(row=><article class:list={{reply:row.id!==root.id}} id={`comment-${row.id}`}><div class="avatar" style={`background:hsl(${row.is_admin?115:hue(row)} 38% 85%);color:hsl(${row.is_admin?115:hue(row)} 35% 30%)`} aria-hidden="true">{row.is_admin?'✦':['✦','◈','✿','●','◆','✶'][row.id%6]}</div><div class="comment-body"><div class="identity">{row.website&&/^https?:\/\//.test(row.website)?<a href={row.website} rel="nofollow ugc noopener" target="_blank">{row.name}</a>:<strong>{row.name}</strong>}{!!row.is_admin&&<b class="author">博主</b>}<time>{formatShanghai(row.created_at)}</time></div>{row.parent_id&&<small>回复 {rows.find(r=>r.id===row.parent_id)?.name||'已删除的留言'}</small>}<p>{row.content}</p><button type="button" class="reply-button" data-reply={row.id} data-name={row.name}>回复</button></div></article>)}</div>):<p class="empty">还没有留言，来开启第一段对话吧。</p>}</div>{totalRoots>10&&<nav class="comment-pagination" aria-label="评论分页">{page>1&&<a href={pageUrl(page-1)}>← 上一页</a>}<span>{page} / {Math.ceil(totalRoots/10)}</span>{(page * 10 < totalRoots)&&<a href={pageUrl(page+1)}>下一页 →</a>}</nav>}<form class="comment-form" data-article={articleId||''} data-moment={momentId||''}><div class="reply-context" hidden><span></span><button type="button" class="cancel-reply">取消回复</button></div><div class="visitor-fields"><label>昵称<input name="name" placeholder="如何称呼你" maxlength="50" required autocomplete="nickname"/></label><label>邮箱 <small>选填，不公开</small><input name="email" type="email" placeholder="you@example.com" maxlength="254" autocomplete="email"/></label><label>网站 <small>选填</small><input name="website" type="url" placeholder="https://" maxlength="1000" autocomplete="url"/></label></div><textarea name="content" aria-label="留言内容" placeholder="写下你的想法…" maxlength="2000" required></textarea><footer><span>审核后公开展示</span><button type="submit">提交留言</button></footer><p role="status" aria-live="polite"></p></form></section>
+<script>
+const identityKey = 'blog-comment-identity-v1';
+document.querySelectorAll<HTMLFormElement>('.comment-form').forEach((form) => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(identityKey) || 'null');
+    if (saved && typeof saved === 'object')
+      for (const key of ['name', 'email', 'website']) {
+        const input = form.elements.namedItem(key) as HTMLInputElement;
+        if (typeof saved[key] === 'string') input.value = saved[key];
+      }
+  } catch {}
+  const row = document.createElement('div');
+  row.className = 'identity-cache';
+  const label = document.createElement('label');
+  const toggle = document.createElement('input');
+  toggle.type = 'checkbox';
+  try {
+    toggle.checked = localStorage.getItem(identityKey + '-enabled') !== 'false';
+  } catch {
+    toggle.checked = true;
+  }
+  label.append(toggle, ' 在此浏览器记住昵称、邮箱和网站');
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.textContent = '清除记录';
+  row.append(label, clear);
+  form.querySelector('.visitor-fields')?.after(row);
+  function remember() {
+    try {
+      if (!toggle.checked) {
+        localStorage.removeItem(identityKey);
+        return;
+      }
+      const fields = new FormData(form);
+      localStorage.setItem(
+        identityKey,
+        JSON.stringify(
+          Object.fromEntries(
+            ['name', 'email', 'website'].map((key) => [
+              key,
+              String(fields.get(key) || ''),
+            ]),
+          ),
+        ),
+      );
+    } catch {}
+  }
+  for (const key of ['name', 'email', 'website'])
+    (form.elements.namedItem(key) as HTMLInputElement)?.addEventListener(
+      'input',
+      remember,
+    );
+  toggle.onchange = () => {
+    try {
+      localStorage.setItem(identityKey + '-enabled', String(toggle.checked));
+    } catch {}
+    remember();
+  };
+  clear.onclick = () => {
+    try {
+      localStorage.removeItem(identityKey);
+    } catch {}
+    for (const key of ['name', 'email', 'website'])
+      (form.elements.namedItem(key) as HTMLInputElement).value = '';
+    toggle.checked = false;
+    try {
+      localStorage.setItem(identityKey + '-enabled', 'false');
+    } catch {}
+  };
+});
+document.querySelectorAll<HTMLFormElement>('.comment-form').forEach((form) => {
+  let parentId: number | null = null;
+  const context = form.querySelector<HTMLElement>('.reply-context')!;
+  const resetReply = () => {
+    parentId = null;
+    context.hidden = true;
+  };
+  form
+    .closest('.comments')!
+    .querySelectorAll<HTMLButtonElement>('[data-reply]')
+    .forEach(
+      (button) =>
+        (button.onclick = () => {
+          parentId = Number(button.dataset.reply);
+          context.hidden = false;
+          context.querySelector('span')!.textContent =
+            `回复 ${button.dataset.name}`;
+          form.querySelector('textarea')!.focus();
+        }),
+    );
+  form.querySelector<HTMLButtonElement>('.cancel-reply')!.onclick = resetReply;
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const button = form.querySelector<HTMLButtonElement>('[type=submit]')!;
+    button.disabled = true;
+    try {
+      const fields = new FormData(form);
+      const r = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: fields.get('name'),
+          email: fields.get('email'),
+          website: fields.get('website'),
+          content: fields.get('content'),
+          articleId: Number(form.dataset.article) || null,
+          momentId: Number(form.dataset.moment) || null,
+          parentId,
+        }),
+      });
+      const data = await r.json();
+      form.querySelector('[role=status]')!.textContent =
+        data.message || data.error;
+      if (r.ok) {
+        form.querySelector('textarea')!.value = '';
+        resetReply();
+      }
+    } catch {
+      form.querySelector('[role=status]')!.textContent = '提交失败，请重试';
+    } finally {
+      button.disabled = false;
+    }
+  };
+});
+</script>
+<style>
+.comments{max-width:900px;margin:32px auto;padding:24px 0;border-top:1px solid var(--color-border)}header h2{font:600 22px var(--font-sans)}header p,.empty{color:var(--color-muted);font-size:13px;margin-top:8px}.threads{margin:24px 0}.thread{padding:4px 0 18px;border-bottom:1px solid var(--color-border)}article{display:flex;gap:12px;padding:18px 0 4px}.avatar{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;flex-shrink:0;font-size:22px}.reply{margin-left:50px}.reply .avatar{width:30px;height:30px;font-size:17px}.comment-body{min-width:0;flex:1}.identity{display:flex;align-items:center;gap:9px;font-size:13px}.identity a,.identity strong{font:700 14px/1.5 var(--font-sans);color:var(--color-accent);letter-spacing:.01em}.identity time{font-weight:400;opacity:.8;margin-left:auto;color:var(--color-muted);font-size:11px}.author{font-size:10px;padding:2px 6px;background:color-mix(in srgb,var(--color-accent) 12%,transparent);color:var(--color-accent);border-radius:4px}.comment-body p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.85;margin:10px 0;color:var(--color-foreground)}small{color:var(--color-muted);font-size:11px}.reply-button{font-size:12px;color:var(--color-muted);padding:3px 0}.comment-form{padding:20px;border:1px solid var(--color-border);border-radius:14px;background:var(--color-card)}.visitor-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}label{font-size:12px}input,textarea{width:100%;box-sizing:border-box;padding:11px;border:1px solid var(--color-border);border-radius:7px;background:var(--color-background);color:var(--color-foreground);font:inherit;font-size:13px;margin-top:7px}textarea{min-height:120px;margin:16px 0 10px;resize:vertical}footer{display:flex;align-items:center;justify-content:space-between}footer span,[role=status]{font-size:12px;color:var(--color-muted)}footer button{padding:10px 20px;background:var(--color-accent);color:var(--color-background);border-radius:7px}.reply-context{display:flex;justify-content:space-between;font-size:12px;margin-bottom:14px;color:var(--color-accent)}.reply-context[hidden]{display:none}@media(max-width:650px){.visitor-fields{grid-template-columns:1fr}.reply{margin-left:22px}.identity{flex-wrap:wrap}.identity time{margin-left:0}.comment-form{padding:16px}}
+</style>

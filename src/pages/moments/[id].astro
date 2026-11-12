@@ -1,0 +1,12 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import Moments from '../../components/Moments.astro';
+import Comments from '../../components/Comments.astro';
+import { sqlite } from '../../lib/db';
+import type { Moment } from '../../services/community';
+const id=Number(Astro.params.id);const item=Number.isSafeInteger(id)?sqlite.prepare('SELECT * FROM moments WHERE id=? AND visible=1 AND deleted_at IS NULL').get(id) as Moment:undefined;
+if(!item)return Astro.redirect('/404');
+---
+<Layout title={`${item.content.slice(0,30)} · 日常片刻`} description={item.content.slice(0,160)}><Header/><main class="container" style="padding-top:40px"><a href="/blog">← 返回博客</a><Moments items={[item]}/><Comments momentId={item.id}/></main><Footer/></Layout>

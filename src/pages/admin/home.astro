@@ -1,0 +1,231 @@
+---
+/**
+ * 首页 Hero 管理页
+ * 集中管理首页 Hero 区域文案与区块标题
+ * 数据通过 settings API（GET/PUT /api/admin/settings）加载与保存
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="首页 Hero" active="home">
+<section class="home-order-panel"><h2>首页模块排序</h2><p>拖动模块调整展示顺序，也可以使用上下移动按钮。保存后首页立即生效。</p><ol id="homeOrder"></ol><button type="button" class="btn-primary" id="saveHomeOrder">保存模块排序</button><span id="orderStatus" role="status"></span><p>单个服务的排序请在「首页服务入口」中调整。</p></section>
+  <form id="homeForm" class="settings-form">
+    <fieldset class="fieldset">
+      <legend>Hero 区域</legend>
+      <div class="form-row">
+        <label>主标题</label>
+        <input type="text" id="hero_title" />
+      </div>
+      <div class="form-row">
+        <label>副标题</label>
+        <input type="text" id="hero_subtitle" />
+      </div>
+      <div class="form-row">
+        <label>简短介绍</label>
+        <input type="text" id="hero_description" />
+      </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend>区块标题</legend>
+      <div class="form-row">
+        <label>Featured 区块标题</label>
+        <input type="text" id="section_featured_title" />
+      </div>
+      <div class="form-row">
+        <label>Other Services 区块标题</label>
+        <input type="text" id="section_other_title" />
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">保存设置</button>
+    </div>
+  </form>
+
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<style>
+  .settings-form { max-width: 720px; }
+  .fieldset {
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    background: var(--admin-bg);
+  }
+  .fieldset legend {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0 8px;
+    color: var(--admin-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .form-row { margin-bottom: 14px; }
+  .form-row label {
+    display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px;
+  }
+  .form-row input {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border);
+    border-radius: 8px; font-size: 0.875rem; background: var(--admin-bg);
+  }
+  .form-row input:focus { outline: none; border-color: var(--admin-primary); }
+  .form-actions { padding-left: 4px; }
+  .btn-primary {
+    padding: 10px 24px; background: var(--admin-primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 20px; background: #1a1a2e; color: #fff;
+    border-radius: 8px; font-size: 0.875rem; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    opacity: 0; transform: translateY(20px); transition: all 0.3s; z-index: 300;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+</style>
+
+<script>
+import {
+  HOME_MODULES,
+  resolveHomeOrder,
+  type HomeModule,
+} from '../../lib/home-layout';
+let homeOrder: HomeModule[] = resolveHomeOrder(''),
+  dragged: HomeModule | undefined;
+let savedOrder = JSON.stringify(homeOrder);
+window.addEventListener('beforeunload', (event) => {
+  if (JSON.stringify(homeOrder) !== savedOrder) event.preventDefault();
+});
+const orderStatus = document.getElementById('orderStatus')!;
+function renderHomeOrder() {
+  const root = document.getElementById('homeOrder')!;
+  root.replaceChildren();
+  homeOrder.forEach((id, index) => {
+    const li = document.createElement('li');
+    li.draggable = true;
+    li.ondragstart = () => (dragged = id);
+    li.ondragover = (e) => {
+      e.preventDefault();
+      li.classList.add('drop-target');
+    };
+    li.ondragleave = () => li.classList.remove('drop-target');
+    li.ondrop = (e) => {
+      e.preventDefault();
+      if (!dragged || dragged === id) return;
+      const source = homeOrder.indexOf(dragged);
+      homeOrder.splice(source, 1);
+      homeOrder.splice(homeOrder.indexOf(id), 0, dragged);
+      orderStatus.textContent = '顺序已修改，尚未保存';
+      renderHomeOrder();
+    };
+    const title = document.createElement('strong');
+    title.textContent = `⠿  ${HOME_MODULES[id]}`;
+    li.append(title);
+    for (const [label, offset] of [
+      ['上移', -1],
+      ['下移', 1],
+    ] as const) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.disabled =
+        index + offset < 0 || index + offset >= homeOrder.length;
+      button.onclick = () => {
+        [homeOrder[index], homeOrder[index + offset]] = [
+          homeOrder[index + offset],
+          homeOrder[index],
+        ];
+        orderStatus.textContent = '顺序已修改，尚未保存';
+        renderHomeOrder();
+      };
+      li.append(button);
+    }
+    root.append(li);
+  });
+}
+document.getElementById('saveHomeOrder')!.onclick = async () => {
+  const button = document.getElementById('saveHomeOrder') as HTMLButtonElement;
+  button.disabled = true;
+  const snapshot = JSON.stringify(homeOrder);
+  try {
+    const response = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ home_module_order: snapshot }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error);
+    savedOrder = snapshot;
+    orderStatus.textContent =
+      JSON.stringify(homeOrder) === snapshot
+        ? '已保存，首页排序已更新'
+        : '已保存提交时的顺序，仍有新修改未保存';
+  } catch (error) {
+    orderStatus.textContent = (error as Error).message;
+  } finally {
+    button.disabled = false;
+  }
+};
+
+/** 首页 Hero 管理涉及的全部设置项 key */
+const fields = [
+  'hero_title',
+  'hero_subtitle',
+  'hero_description',
+  'section_featured_title',
+  'section_other_title',
+];
+
+/** 从 settings API 加载已有设置并回填表单 */
+async function loadSettings() {
+  const res = await fetch('/api/admin/settings');
+  const data = await res.json();
+  homeOrder = resolveHomeOrder(data.home_module_order || '');
+  savedOrder = JSON.stringify(homeOrder);
+  renderHomeOrder();
+  fields.forEach((key) => {
+    const el = document.getElementById(key) as HTMLInputElement | null;
+    if (el) el.value = data[key] ?? '';
+  });
+}
+
+const toast = document.getElementById('toast')!;
+
+/** 显示轻量提示 */
+function showToast(msg: string) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+document.getElementById('homeForm')!.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  // 收集表单数据
+  const payload: Record<string, string> = {};
+  fields.forEach((key) => {
+    const el = document.getElementById(key) as HTMLInputElement | null;
+    if (el) payload[key] = el.value;
+  });
+
+  // 保存到 settings API
+  const res = await fetch('/api/admin/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok) {
+    showToast('设置已保存');
+  } else {
+    const data = await res.json();
+    showToast(data.error || '保存失败');
+  }
+});
+
+loadSettings();
+</script>
+<style>.home-order-panel{max-width:720px;padding:24px;border:1px solid var(--admin-border);border-radius:12px;background:var(--admin-bg);margin-bottom:24px}h2{font-size:17px}.home-order-panel p{font-size:12px;color:var(--admin-muted);line-height:1.8;margin:10px 0}.home-order-panel ol{list-style:none;margin:18px 0}.home-order-panel :global(li){display:flex;align-items:center;gap:10px;padding:13px;border:1px solid var(--admin-border);border-radius:8px;margin:8px 0;background:var(--admin-bg);cursor:grab}.home-order-panel :global(li strong){flex:1;font-size:13px}.home-order-panel :global(li button){padding:6px 10px;border:1px solid var(--admin-border);border-radius:5px;font-size:12px}.home-order-panel :global(li button:disabled){opacity:.3}.home-order-panel :global(.drop-target){outline:2px solid var(--admin-primary)}#orderStatus{font-size:12px;color:var(--admin-muted);margin-left:12px}</style>

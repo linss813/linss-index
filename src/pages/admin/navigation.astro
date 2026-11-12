@@ -1,0 +1,328 @@
+---
+/**
+ * Navigation 管理页
+ * 列表展示全部导航链接，支持新增、编辑、删除、启用/禁用
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="Navigation" active="navigation">
+  <p class="field-hint">管理网站页头、首页快捷区和页脚的链接。可以添加站内页面或外部网址；外部链接会提示离站。</p>
+  <div class="toolbar">
+    <button class="btn-primary" id="btnNew">+ 新增导航</button>
+  </div>
+
+  <!-- 批量操作条 -->
+  <div class="batch-bar">
+    <label style="display:flex; align-items:center; gap:6px; font-size:0.8125rem; color:var(--admin-muted); cursor:pointer;">
+      <input type="checkbox" class="row-check" id="checkAll" /> 全选
+    </label>
+    <span class="batch-info">已选 <b id="selCount">0</b> 项</span>
+    <button type="button" class="btn-icon danger" id="btnBatchDel" disabled>批量删除</button>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th style="width:40px">序</th>
+        <th>名称</th>
+        <th>URL</th>
+        <th>位置</th>
+        <th>启用</th>
+        <th style="width:120px">操作</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+      <tr class="loading-row"><td colspan="7"><div class="table-state"><i class="table-spinner"></i><strong>正在加载导航</strong></div></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 新增/编辑弹窗 -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h2 class="modal-title" id="modalTitle">新增导航</h2>
+      <form id="navForm">
+        <input type="hidden" id="editId" value="" />
+        <div class="form-row">
+          <label>名称 *</label>
+          <input type="text" id="name" required />
+        </div>
+        <div class="form-row">
+          <label>URL *</label>
+          <input type="url" id="url" required placeholder="https://" />
+        </div>
+        <div class="form-row">
+          <label>图标</label>
+          <input type="text" id="icon" placeholder="可选" />
+        </div>
+        <div class="form-row">
+          <label>位置</label>
+          <select id="location">
+            <option value="header">Header</option>
+            <option value="quick">Quick</option>
+            <option value="footer">Footer</option>
+          </select>
+        </div>
+        <div class="form-row-inline">
+          <label><input type="checkbox" id="external" /> 外部链接（新窗口）</label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" id="btnCancel">取消</button>
+          <button type="submit" class="btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</AdminLayout>
+
+<style>
+  .toolbar { margin-bottom: 16px; }
+  .btn-primary {
+    padding: 8px 16px; background: var(--admin-primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-cancel {
+    padding: 8px 16px; background: transparent; color: var(--admin-muted);
+    border: 1px solid var(--admin-border); border-radius: 8px; font-size: 0.875rem;
+    cursor: pointer;
+  }
+  .data-table {
+    width: 100%; border-collapse: collapse; background: var(--admin-bg);
+    border: 1px solid var(--admin-border); border-radius: 12px; overflow: hidden;
+  }
+  .data-table th {
+    text-align: left; padding: 10px 12px; font-size: 0.75rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--admin-muted);
+    background: #f9f9fa; border-bottom: 1px solid var(--admin-border);
+  }
+  .data-table td {
+    padding: 10px 12px; font-size: 0.8125rem; border-bottom: 1px solid var(--admin-border);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  }
+  .badge-on { background: #dcfce7; color: #15803d; }
+  .badge-off { background: #fee2e2; color: #b91c1c; }
+  .modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    z-index: 200; align-items: center; justify-content: center;
+  }
+  .modal.show { display: flex; }
+  .modal-content {
+    width: 480px; max-width: 90vw; background: var(--admin-bg);
+    border-radius: 12px; padding: 28px; max-height: 90vh; overflow-y: auto;
+  }
+  .modal-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 20px; }
+  .form-row { margin-bottom: 14px; }
+  .form-row label {
+    display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px;
+  }
+  .form-row input, .form-row select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border);
+    border-radius: 8px; font-size: 0.875rem;
+  }
+  .form-row input:focus, .form-row select:focus { outline: none; border-color: var(--admin-primary); }
+  .form-row-inline { margin-bottom: 14px; }
+  .form-row-inline label { font-size: 0.8125rem; color: var(--admin-muted); }
+  .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+</style>
+
+<script>
+  /** 操作按钮内联 SVG 图标（feather 风格，继承按钮文字颜色） */
+  const ICONS: Record<string, string> = {
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+    eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+    lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  };
+
+  const tableBody = document.getElementById('tableBody')!;
+  const modal = document.getElementById('modal')!;
+  const modalTitle = document.getElementById('modalTitle')!;
+  const form = document.getElementById('navForm') as HTMLFormElement;
+
+  /**
+   * 加载导航列表并渲染表格
+   * 拉取 /api/admin/navigation 后逐条构造行 HTML，并绑定操作按钮事件
+   */
+  async function loadList() {
+    const res = await fetch('/api/admin/navigation');
+    const data = await res.json();
+    if (!data.length) {
+      tableBody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="table-state"><span class="table-state-icon">◇</span><strong>还没有导航</strong><span>点击“新增导航”创建第一项链接</span></div></td></tr>';
+      refreshBatchState();
+      return;
+    }
+    tableBody.innerHTML = data.map((n: any, i: number) => `
+      <tr>
+        <td><input type="checkbox" class="row-check row-select" data-id="${n.id}" /></td>
+        <td>${i + 1}</td>
+        <td><div class="cell-title">${esc(n.name)}</div></td>
+        <td><a class="cell-link" href="${esc(n.url)}" target="_blank">${esc(n.url)}</a></td>
+        <td>${esc(n.location)}</td>
+        <td><span class="badge ${n.enabled ? 'badge-on' : 'badge-off'}">${n.enabled ? '启用' : '停用'}</span></td>
+        <td class="action-cell">
+          <div class="row-actions">
+            <button class="btn-icon" data-edit="${n.id}">${ICONS.edit}编辑</button>
+            <details class="action-menu">
+              <summary class="btn-icon ghost" aria-label="更多操作" title="更多操作">•••</summary>
+              <div class="action-menu-popover">
+                ${n.enabled ? `<button class="action-menu-item warning" data-toggle="${n.id}" data-enabled="${n.enabled}">${ICONS.eyeOff}禁用</button>` : `<button class="action-menu-item success" data-toggle="${n.id}" data-enabled="${n.enabled}">${ICONS.eye}启用</button>`}
+                <button class="action-menu-item danger" data-del="${n.id}">${ICONS.del}删除</button>
+              </div>
+            </details>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    tableBody.querySelectorAll('[data-edit]').forEach(btn => {
+      btn.addEventListener('click', () => openEdit(parseInt(btn.getAttribute('data-edit')!)));
+    });
+    tableBody.querySelectorAll('[data-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => toggleEnabled(parseInt(btn.getAttribute('data-toggle')!), btn.getAttribute('data-enabled') === '1'));
+    });
+    tableBody.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', () => delItem(parseInt(btn.getAttribute('data-del')!)));
+    });
+  }
+
+  /** HTML 转义，防止 XSS */
+  function esc(s: any) { return String(s ?? '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]!)); }
+
+  /** 打开新增弹窗，重置表单并填入默认值 */
+  function openCreate() {
+    modalTitle.textContent = '新增导航';
+    form.reset();
+    (document.getElementById('editId') as HTMLInputElement).value = '';
+    (document.getElementById('icon') as HTMLInputElement).value = '';
+    (document.getElementById('location') as HTMLSelectElement).value = 'footer';
+    modal.classList.add('show');
+  }
+
+  /**
+   * 打开编辑弹窗，按 id 拉取最新列表后定位记录并填充表单
+   * @param id 要编辑的导航项 ID
+   */
+  async function openEdit(id: number) {
+    const res = await fetch('/api/admin/navigation');
+    const data = await res.json();
+    const n = data.find((x: any) => x.id === id);
+    if (!n) return;
+    modalTitle.textContent = '编辑导航';
+    (document.getElementById('editId') as HTMLInputElement).value = String(id);
+    (document.getElementById('name') as HTMLInputElement).value = n.name;
+    (document.getElementById('url') as HTMLInputElement).value = n.url;
+    (document.getElementById('icon') as HTMLInputElement).value = n.icon ?? '';
+    (document.getElementById('location') as HTMLSelectElement).value = n.location;
+    (document.getElementById('external') as HTMLInputElement).checked = n.external === 1;
+    modal.classList.add('show');
+  }
+
+  /**
+   * 切换导航项启用/禁用状态
+   * @param id             导航项 ID
+   * @param currentEnabled 当前是否启用
+   */
+  async function toggleEnabled(id: number, currentEnabled: boolean) {
+    await fetch(`/api/admin/navigation/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !currentEnabled }),
+    });
+    loadList();
+  }
+
+  /**
+   * 删除指定导航项（二次确认）
+   * @param id 导航项 ID
+   */
+  async function delItem(id: number) {
+    if (!confirm('确定删除此导航项？')) return;
+    await fetch(`/api/admin/navigation/${id}`, { method: 'DELETE' });
+    loadList();
+  }
+
+  document.getElementById('btnNew')!.addEventListener('click', openCreate);
+  document.getElementById('btnCancel')!.addEventListener('click', () => modal.classList.remove('show'));
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+
+  // 表单提交：根据 editId 判定调用 PUT（更新）还是 POST（新增）
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const editId = (document.getElementById('editId') as HTMLInputElement).value;
+    const payload = {
+      name: (document.getElementById('name') as HTMLInputElement).value,
+      url: (document.getElementById('url') as HTMLInputElement).value,
+      icon: (document.getElementById('icon') as HTMLInputElement).value,
+      location: (document.getElementById('location') as HTMLSelectElement).value,
+      external: (document.getElementById('external') as HTMLInputElement).checked,
+    };
+    if (editId) {
+      await fetch(`/api/admin/navigation/${editId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await fetch('/api/admin/navigation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    }
+    modal.classList.remove('show');
+    loadList();
+  });
+
+  /* ---------- 批量选择与批量删除 ---------- */
+  const checkAll = document.getElementById('checkAll') as HTMLInputElement;
+  const selCount = document.getElementById('selCount')!;
+  const btnBatchDel = document.getElementById('btnBatchDel') as HTMLButtonElement;
+
+  /** 刷新选中计数与批量删除按钮状态 */
+  function refreshBatchState(): void {
+    const boxes = tableBody.querySelectorAll<HTMLInputElement>('.row-select:checked');
+    selCount.textContent = String(boxes.length);
+    btnBatchDel.disabled = boxes.length === 0;
+    checkAll.checked = boxes.length > 0 && boxes.length === tableBody.querySelectorAll<HTMLInputElement>('.row-select').length;
+  }
+
+  // 全选 / 取消全选
+  checkAll.addEventListener('change', () => {
+    tableBody.querySelectorAll<HTMLInputElement>('.row-select').forEach((box) => { box.checked = checkAll.checked; });
+    refreshBatchState();
+  });
+
+  // 单行勾选联动（事件委托，兼容列表刷新后重新渲染）
+  tableBody.addEventListener('change', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('row-select')) refreshBatchState();
+  });
+
+  // 批量删除
+  btnBatchDel.addEventListener('click', async () => {
+    const ids = Array.from(tableBody.querySelectorAll<HTMLInputElement>('.row-select:checked')).map((b) => parseInt(b.dataset.id!, 10));
+    if (!ids.length) return;
+    if (!confirm(`确定删除选中的 ${ids.length} 项？此操作不可恢复。`)) return;
+    const res = await fetch('/api/admin/navigation/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      alert(`已删除 ${data.deleted} 项`);
+      checkAll.checked = false;
+      loadList();
+    } else {
+      const data = await res.json();
+      alert(data.error || '批量删除失败');
+    }
+  });
+
+  loadList();
+</script>

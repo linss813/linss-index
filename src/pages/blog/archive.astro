@@ -1,0 +1,152 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import { getArchiveArticles, getBlogDefaultCover, getRssCategories } from '../../services/articles';
+import { getSiteConfig } from '../../lib/queries';
+import { formatDateShort } from '../../lib/datetime';
+import { db } from '../../lib/db';
+import { sql } from 'drizzle-orm';
+const activity=db.all<{day:string;count:number}>(sql`SELECT substr(published_at,1,10) AS day,count(*) AS count FROM rss_articles WHERE visible=1 AND deleted_at IS NULL GROUP BY day`);
+const counts=new Map(activity.map(row=>[row.day,row.count]));
+const heatDays=Array.from({length:364},(_,index)=>{const date=new Date();date.setUTCDate(date.getUTCDate()-363+index);const day=date.toISOString().slice(0,10);return {day,count:counts.get(day)||0};});
+
+const page = Math.max(Number(Astro.url.searchParams.get('page')) || 1, 1);
+const query = (Astro.url.searchParams.get('q') ?? '').trim().slice(0, 100);
+const categoryParam = Astro.url.searchParams.get('category');
+const categoryId = categoryParam && /^\d+$/.test(categoryParam) ? Number(categoryParam) : undefined;
+const result = getArchiveArticles({ page, pageSize: 20, query, categoryId });
+const categories = getRssCategories();
+const defaultCover = getBlogDefaultCover();
+const site = getSiteConfig();
+
+type Group = { year: string; months: { month: string; articles: typeof result.articles }[] };
+const grouped: Group[] = [];
+for (const article of result.articles) {
+  const date = article.publishedAt ? new Date(article.publishedAt) : null;
+  const year = date && !Number.isNaN(date.getTime()) ? `${date.getFullYear()}年` : '时间未知';
+  const month = date && !Number.isNaN(date.getTime()) ? `${String(date.getMonth() + 1).padStart(2, '0')}月` : '—';
+  let yearGroup = grouped.find((group) => group.year === year);
+  if (!yearGroup) { yearGroup = { year, months: [] }; grouped.push(yearGroup); }
+  let monthGroup = yearGroup.months.find((group) => group.month === month);
+  if (!monthGroup) { monthGroup = { month, articles: [] }; yearGroup.months.push(monthGroup); }
+  monthGroup.articles.push(article);
+}
+
+function pageUrl(target: number): string {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (categoryId) params.set('category', String(categoryId));
+  if (target > 1) params.set('page', String(target));
+  return `/blog/archive${params.size ? `?${params}` : ''}`;
+}
+---
+
+<Layout title={`文章归档 | ${site.name}`} description="按时间浏览和搜索已收录的 RSS 文章">
+  <Header />
+  <main class="container archive-main">
+    <header class="archive-head">
+      <a href="/blog">← 返回文章</a>
+      <h1>Archive<span>.</span></h1>
+      <p>按时间浏览所有已收录文章，或搜索标题与正文内容。</p>
+    </header>
+
+    <section class="activity-map" aria-label="最近一年文章发布热力图"><p>文章发布 · 最近一年</p><div class="heat-grid">{heatDays.map(day=><span title={`${day.day}：${day.count} 篇文章`} style={`--heat:${day.count?Math.min(1,.25+day.count*.15):0}`}><span class="sr-heat">{day.day}：{day.count} 篇</span></span>)}</div><small>浅色表示较少，深色表示较多</small></section>
+    <form class="archive-tools" method="get">
+      <label class="search-box"><span>⌕</span><input type="search" name="q" value={query} placeholder="搜索标题或正文…" /></label>
+      <select name="category" aria-label="来源分类">
+        <option value="">全部分类</option>
+        {categories.map((category) => <option value={category.id} selected={categoryId === category.id}>{category.name}</option>)}
+      </select>
+      <button type="submit">搜索</button>
+      {(query || categoryId) && <a href="/blog/archive">清除</a>}
+    </form>
+
+    <p class="result-summary">共 {result.total} 篇{query ? `与“${query}”相关的` : ''}文章</p>
+
+    {grouped.length === 0 ? (
+      <div class="archive-empty"><span>—</span><p>没有找到符合条件的文章。</p></div>
+    ) : grouped.map((year) => (
+      <section class="year-group">
+        <h2>{year.year}</h2>
+        <div class="months">
+          {year.months.map((month) => (
+            <section class="month-group">
+              <h3>{month.month}</h3>
+              <div class="archive-list">
+                {month.articles.map((article) => (
+                  <article class="archive-row">
+                    <a class="archive-thumb" href={`/blog/${encodeURIComponent(article.slug)}`} tabindex="-1"><img src={article.cover || article.sourceCover || defaultCover} data-fallback={defaultCover} alt="" loading="lazy" /></a>
+                    <div class="archive-copy">
+                      <div class="row-meta">
+                        {article.publishedAt && <time datetime={article.publishedAt}>{formatDateShort(article.publishedAt)}</time>}
+                        <span>来源：{article.sourceName}</span>
+                      </div>
+                      <h4><a href={`/blog/${encodeURIComponent(article.slug)}`}>{article.title}</a></h4>
+                      <p>{article.matchExcerpt?.replace(/<\/?mark>/g, '') || article.excerpt}</p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </section>
+    ))}
+
+    {result.totalPages > 1 && (
+      <nav class="pagination" aria-label="归档分页">
+        <a href={pageUrl(Math.max(1, result.page - 1))} aria-disabled={result.page === 1}>← 上一页</a>
+        <span>第 {result.page} / {result.totalPages} 页</span>
+        <a href={pageUrl(Math.min(result.totalPages, result.page + 1))} aria-disabled={result.page >= result.totalPages}>下一页 →</a>
+      </nav>
+    )}
+  </main>
+  <Footer />
+</Layout>
+
+<script>
+  document.querySelectorAll<HTMLImageElement>('img[data-fallback]').forEach((image) => {
+    image.addEventListener('error', () => {
+      const fallback = image.dataset.fallback;
+      if (fallback && image.src !== new URL(fallback, location.href).href) image.src = fallback;
+    });
+  });
+</script>
+
+<style>
+  .activity-map{padding:18px 0;overflow:auto}.activity-map p{font-size:12px;margin-bottom:12px}.heat-grid{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,10px);grid-auto-columns:10px;gap:4px;width:max-content}.heat-grid>span{border-radius:2px;background:color-mix(in srgb,var(--color-accent) calc(var(--heat)*100%),var(--color-border))}.activity-map small{display:block;margin-top:10px;color:var(--color-muted);font-size:11px}.sr-heat{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+  .archive-main { padding-bottom: calc(var(--space-section) * .6); }
+  .archive-head { padding: var(--space-section) 0 40px; border-bottom: 1px solid var(--color-border); }
+  .archive-head > a { color: var(--color-muted); font-family: var(--font-mono); font-size: .72rem; }
+  h1 { margin-top: 22px; font-size: clamp(2.7rem, 8vw, 5rem); letter-spacing: -.045em; line-height: 1; }
+  h1 span { color: var(--color-accent); }
+  .archive-head p { max-width: 52ch; margin-top: 17px; color: var(--color-muted); }
+  .archive-tools { display: flex; gap: 9px; flex-wrap: wrap; margin: 28px 0 10px; }
+  .search-box { display: flex; min-width: min(100%, 320px); flex: 1; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--color-border); border-radius: 10px; background: color-mix(in srgb, var(--color-card) 90%, transparent); }
+  .search-box span { color: var(--color-muted); }
+  .search-box input { width: 100%; height: 42px; border: 0; outline: 0; background: transparent; color: var(--color-foreground); }
+  .archive-tools select, .archive-tools button, .archive-tools > a { min-height: 42px; padding: 0 14px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-card); color: var(--color-foreground); }
+  .archive-tools button { border-color: var(--color-foreground); background: var(--color-foreground); color: var(--color-background); }
+  .archive-tools > a { display: grid; place-items: center; color: var(--color-muted); }
+  .result-summary { margin-bottom: 34px; color: var(--color-muted); font-family: var(--font-mono); font-size: .7rem; }
+  .year-group { display: grid; grid-template-columns: 112px minmax(0,1fr); gap: 28px; margin-bottom: 54px; }
+  .year-group > h2 { position: sticky; top: 80px; align-self: start; font-size: 1.35rem; letter-spacing: -.03em; }
+  .months { display: grid; gap: 36px; }
+  .month-group { display: grid; grid-template-columns: 62px minmax(0,1fr); gap: 18px; }
+  .month-group > h3 { padding-top: 5px; color: var(--color-accent); font-family: var(--font-mono); font-size: .76rem; }
+  .archive-list { border-top: 1px solid var(--color-border); }
+  .archive-row { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 16px; padding: 18px 0; border-bottom: 1px solid var(--color-border); }
+  .archive-thumb { display: grid; height: 64px; place-items: center; overflow: hidden; border-radius: 8px; background: color-mix(in srgb, var(--color-muted) 7%, transparent); }
+  .archive-thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .row-meta { display: flex; gap: 10px; flex-wrap: wrap; color: var(--color-muted); font-family: var(--font-mono); font-size: .65rem; }
+  .archive-copy h4 { margin-top: 5px; font-size: 1rem; }
+  .archive-copy h4 a:hover { color: var(--color-accent); }
+  .archive-copy p { display: -webkit-box; margin-top: 5px; overflow: hidden; color: var(--color-muted); font-size: .78rem; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 20px; border-top: 1px solid var(--color-border); font-family: var(--font-mono); font-size: .72rem; }
+  .pagination span { color: var(--color-muted); }
+  .pagination a[aria-disabled="true"] { opacity: .35; pointer-events: none; }
+  .archive-empty { display: grid; min-height: 220px; place-items: center; align-content: center; color: var(--color-muted); }
+  .archive-empty span { color: var(--color-accent); }
+  @media (max-width: 640px) { .year-group { grid-template-columns: 1fr; gap: 14px; } .year-group > h2 { position: static; } .month-group { grid-template-columns: 44px minmax(0,1fr); gap: 10px; } .archive-row { grid-template-columns: 64px minmax(0,1fr); } .archive-thumb { height: 52px; } }
+</style>

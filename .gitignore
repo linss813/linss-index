@@ -1,0 +1,27 @@
+# 构建产物
+dist/
+
+# Astro 生成文件
+.astro/
+
+# 依赖
+node_modules/
+
+# 日志
+npm-debug.log*
+pnpm-debug.log*
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 环境变量（模板文件除外）
+.env
+.env.*
+!.env.example
+
+# 数据库与上传文件
+data/
+
+# 发行版工件
+releases/

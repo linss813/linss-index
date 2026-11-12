@@ -1,0 +1,18 @@
+---
+import Homepage from '../index.astro';
+import Layout from '../../layouts/Layout.astro';
+import HomeSidebars from '../../components/HomeSidebars.astro';
+import { getSidebarState,sidebarDocument } from '../../services/sidebars';
+let document=getSidebarState().draft;let mode='cards';
+if(Astro.request.method==='POST'&&Astro.request.headers.get('origin')===Astro.url.origin){try{const data=await Astro.request.formData();mode=String(data.get('mode')||'cards');const parsed=sidebarDocument.safeParse(JSON.parse(String(data.get('document'))));if(parsed.success)document=parsed.data;}catch{}}
+---
+{mode==='home'?<Homepage sidebarPreview={document}/>:<Layout title="侧栏草稿预览" noindex><main style="padding:20px"><HomeSidebars document={document} preview/></main></Layout>}
+<script>
+window.addEventListener('message', (e) => {
+  if (e.origin !== location.origin) return;
+  document.querySelectorAll<HTMLElement>('[data-module-id]').forEach((card) => {
+    card.style.outline =
+      card.dataset.moduleId === e.data?.selected ? '2px solid #839c72' : '';
+  });
+});
+</script>

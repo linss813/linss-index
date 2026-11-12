@@ -1,0 +1,164 @@
+/* =========================================
+   全局样式
+   全部设计 Token（颜色 / 圆角 / 阴影 / 间距 / 字体）
+   由 src/components/DesignTokens.astro 在构建时
+   根据 theme.ts + appearance.ts 生成并注入，
+   组件只允许引用 Token，不允许写死视觉值
+   ========================================= */
+
+/* ---------- Reset ---------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-muted) 42%, transparent)
+    transparent;
+  scrollbar-gutter: stable;
+}
+.identity-cache {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--color-muted);
+  font-size: 11px;
+}
+.identity-cache label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.identity-cache input[type='checkbox'] {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+}
+.identity-cache button {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+html[data-mode='dark'] {
+  --color-background: #20242b;
+  --color-card: #282e36;
+  --color-foreground: #cbd0d7;
+  --color-muted: #a2aab6;
+  --color-border: #3b424d;
+  --color-accent: #91b3cf;
+}
+select:not([multiple]) {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23818b98' stroke-width='1.5'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-position: right 12px center;
+  background-repeat: no-repeat;
+  padding-right: 38px !important;
+}
+
+/* 统一滚动条：细、低对比，不抢内容注意力；可滚动面板沿用同一套视觉。 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-muted) 42%, transparent)
+    transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  min-height: 34px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-muted) 42%, transparent);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--color-accent) 68%, var(--color-muted));
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+body {
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+  font-family: var(--font-heading);
+}
+
+/* ---------- 通用布局 ---------- */
+.container {
+  width: 100%;
+  max-width: var(--layout-max-width);
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+/* 移动端收窄容器左右内边距，避免内容贴边又不过度占位 */
+@media (max-width: 640px) {
+  .container {
+    padding-inline: 16px;
+  }
+}
+.comment-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 15px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.preview-note {
+  font-size: 12px;
+  color: var(--color-accent);
+  padding-bottom: 20px;
+}

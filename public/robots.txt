@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://luen0511.com/sitemap.xml

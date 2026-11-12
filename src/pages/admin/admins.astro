@@ -1,0 +1,263 @@
+---
+/**
+ * 管理员管理页
+ * 展示全部管理员列表，支持修改密码
+ * 列表数据由 GET /api/admin/admins 提供（不含密码哈希）
+ * 修改密码提交至 PUT /api/admin/admins/:id
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="管理员" active="admins">
+  <div class="toolbar">
+    <p class="hint">展示全部管理员账号，可修改密码。创建时间与最后登录时间由系统自动记录。</p>
+  </div>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:40px">序</th>
+        <th>用户名</th>
+        <th>创建时间</th>
+        <th>最后登录</th>
+        <th style="width:120px">操作</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+      <tr class="loading-row"><td colspan="5"><div class="table-state"><i class="table-spinner"></i><strong>正在加载管理员</strong></div></td></tr>
+    </tbody>
+  </table>
+
+  <!-- 修改密码弹窗 -->
+  <div class="modal" id="modal">
+    <div class="modal-content">
+      <h2 class="modal-title" id="modalTitle">修改密码</h2>
+      <form id="passwordForm">
+        <input type="hidden" id="editId" value="" />
+        <div class="form-row">
+          <label>用户名</label>
+          <input type="text" id="editUsername" disabled />
+        </div>
+        <div class="form-row">
+          <label>新密码 *</label>
+          <input type="password" id="password" required minlength="6" placeholder="至少 6 位" />
+        </div>
+        <div class="form-row">
+          <label>确认新密码 *</label>
+          <input type="password" id="passwordConfirm" required minlength="6" placeholder="再次输入新密码" />
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn-cancel" id="btnCancel">取消</button>
+          <button type="submit" class="btn-primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<style>
+  /* 参照 services.astro 的表格与弹窗样式 */
+  .toolbar { margin-bottom: 16px; }
+  .hint { font-size: 0.8125rem; color: var(--admin-muted); }
+  .data-table {
+    width: 100%; border-collapse: collapse; background: var(--admin-bg);
+    border: 1px solid var(--admin-border); border-radius: 12px; overflow: hidden;
+  }
+  .data-table th {
+    text-align: left; padding: 10px 12px; font-size: 0.75rem;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--admin-muted);
+    background: #f9f9fa; border-bottom: 1px solid var(--admin-border);
+  }
+  .data-table td {
+    padding: 10px 12px; font-size: 0.8125rem; border-bottom: 1px solid var(--admin-border);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  }
+  .badge-online { background: #dcfce7; color: #15803d; }
+  .badge-offline { background: #f3f4f6; color: #6b7280; }
+  .btn-primary {
+    padding: 8px 16px; background: var(--admin-primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-cancel {
+    padding: 8px 16px; background: transparent; color: var(--admin-muted);
+    border: 1px solid var(--admin-border); border-radius: 8px; font-size: 0.875rem;
+    cursor: pointer;
+  }
+  .modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    z-index: 200; align-items: center; justify-content: center;
+  }
+  .modal.show { display: flex; }
+  .modal-content {
+    width: 480px; max-width: 90vw; background: var(--admin-bg);
+    border-radius: 12px; padding: 28px; max-height: 90vh; overflow-y: auto;
+  }
+  .modal-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 20px; }
+  .form-row { margin-bottom: 14px; }
+  .form-row label {
+    display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px;
+  }
+  .form-row input {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border);
+    border-radius: 8px; font-size: 0.875rem; background: var(--admin-bg);
+  }
+  .form-row input:focus { outline: none; border-color: var(--admin-primary); }
+  .form-row input:disabled { background: #f3f4f6; color: var(--admin-muted); cursor: not-allowed; }
+  .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 20px; background: #1a1a2e; color: #fff;
+    border-radius: 8px; font-size: 0.875rem; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    opacity: 0; transform: translateY(20px); transition: all 0.3s; z-index: 300;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+</style>
+
+<script>
+  /** 操作按钮内联 SVG 图标（feather 风格，继承按钮文字颜色） */
+  const ICONS: Record<string, string> = {
+    edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+    eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+    lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
+  };
+
+  const tableBody = document.getElementById('tableBody')!;
+  const modal = document.getElementById('modal')!;
+  const modalTitle = document.getElementById('modalTitle')!;
+  const form = document.getElementById('passwordForm') as HTMLFormElement;
+  const toast = document.getElementById('toast')!;
+
+  /**
+   * HTML 转义，防止注入
+   * @param s 原始值
+   * @returns 转义后的安全字符串
+   */
+  function esc(s: any): string {
+    return String(s ?? '').replace(/[<>&"]/g, (c) => ({
+      '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;',
+    }[c]!));
+  }
+
+  /**
+   * 将 ISO 时间字符串格式化为本地可读形式
+   * @param iso ISO 时间字符串
+   * @returns 格式化后的时间，无效时返回 "—"
+   */
+  function fmtTime(iso: any): string {
+    if (!iso) return '—';
+    const d = new Date(String(iso));
+    if (isNaN(d.getTime())) return esc(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  /**
+   * 显示 Toast 提示
+   * @param msg 提示文案
+   */
+  function showToast(msg: string): void {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  /**
+   * 加载管理员列表并渲染表格
+   * 数据来源：GET /api/admin/admins（不含 password_hash）
+   */
+  async function loadList(): Promise<void> {
+    const res = await fetch('/api/admin/admins');
+    const data = await res.json();
+    if (!data.length) {
+      tableBody.innerHTML = '<tr class="empty-row"><td colspan="5"><div class="table-state"><span class="table-state-icon">◇</span><strong>暂无管理员账号</strong><span>管理员创建后会显示在这里</span></div></td></tr>';
+      return;
+    }
+    tableBody.innerHTML = data.map((a: any, i: number) => {
+      const online = !!a.lastLoginAt;
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td><div class="cell-title">${esc(a.username)}</div></td>
+          <td>${fmtTime(a.createdAt)}</td>
+          <td>
+            <span class="badge ${online ? 'badge-online' : 'badge-offline'}">${online ? '曾登录' : '未登录'}</span>
+            ${fmtTime(a.lastLoginAt)}
+          </td>
+          <td>
+            <div class="row-actions">
+              <button class="btn-icon ghost" data-edit="${a.id}" data-name="${esc(a.username)}">${ICONS.lock}修改密码</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // 绑定修改密码按钮
+    tableBody.querySelectorAll('[data-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        openEdit(parseInt(btn.getAttribute('data-edit')!), btn.getAttribute('data-name')!);
+      });
+    });
+  }
+
+  /**
+   * 打开修改密码弹窗
+   * @param id    管理员 ID
+   * @param name  管理员用户名
+   */
+  function openEdit(id: number, name: string): void {
+    modalTitle.textContent = `修改密码：${name}`;
+    form.reset();
+    (document.getElementById('editId') as HTMLInputElement).value = String(id);
+    (document.getElementById('editUsername') as HTMLInputElement).value = name;
+    modal.classList.add('show');
+  }
+
+  // 取消按钮 / 点击遮罩关闭弹窗
+  document.getElementById('btnCancel')!.addEventListener('click', () => modal.classList.remove('show'));
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+
+  // 表单提交：校验两次密码一致后提交至 PUT /api/admin/admins/:id
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = (document.getElementById('editId') as HTMLInputElement).value;
+    const pwd = (document.getElementById('password') as HTMLInputElement).value;
+    const pwdConfirm = (document.getElementById('passwordConfirm') as HTMLInputElement).value;
+
+    if (pwd !== pwdConfirm) {
+      showToast('两次输入的密码不一致');
+      return;
+    }
+    if (pwd.length < 6) {
+      showToast('密码至少 6 位');
+      return;
+    }
+
+    const res = await fetch(`/api/admin/admins/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+
+    if (res.ok) {
+      showToast('密码已修改');
+      modal.classList.remove('show');
+    } else {
+      const data = await res.json();
+      showToast(data.error || '修改失败');
+    }
+  });
+
+  // 首次加载
+  loadList();
+</script>

@@ -1,0 +1,1484 @@
+---
+/**
+ * 相册管理页
+ * 功能区块：
+ *  1. Album 管理：创建 / 编辑 / 删除（删除仅解绑照片，不删文件）
+ *  2. 多文件上传：多选 + 拖拽 + 进度 + 失败重试 + 移除，可选目标相册
+ *  3. 照片列表：缩略图（contain 原比例 + 点击预览）、相册移动、尺寸 / 大小 / 时间、发布切换、批量操作
+ *  4. Metadata 公开配置：GPS 等敏感字段公开开关
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="相册 Gallery" active="gallery">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">相册 Gallery</h1>
+      <p class="page-desc">管理前台 /gallery 的相册分组、照片上传与元数据公开策略。</p>
+    </div>
+    <div><button class="btn-icon" id="openGallerySettings" type="button">水印与照片信息设置</button> <a class="btn-icon" href="/gallery" target="_blank" rel="noopener">查看前台</a></div>
+  </div>
+
+  <!-- ===== 相册分组管理 ===== -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">相册 Albums</h2>
+      <button type="button" class="btn-icon accent" id="btnAddAlbum">新建相册</button>
+    </div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th style="width:80px">封面</th>
+          <th>名称 / 描述</th>
+          <th style="width:70px">照片数</th>
+          <th style="width:64px">排序</th>
+          <th style="width:70px">状态</th>
+          <th style="width:130px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="albumBody">
+        <tr class="loading-row"><td colspan="6"><div class="table-state"><i class="table-spinner"></i><strong>正在加载相册</strong></div></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ===== 上传区 ===== -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">上传照片</h2>
+      <div class="upload-target">
+        <label for="uploadAlbum">目标相册 <span class="req">*</span></label>
+        <select id="uploadAlbum"><option value="">— 请先选择目标相册 —</option></select>
+      </div>
+    </div>
+    <div class="dropzone" id="dropzone">
+      <p class="dz-main">Drop images here</p>
+      <p class="dz-sub">流程：先选择目标相册 → 添加/拖入文件 → 确认上传（可多选，支持 jpeg / png / webp / gif，单个 ≤10MB）</p>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden />
+    </div>
+    <ul class="upload-queue" id="uploadQueue"></ul>
+    <!-- 确认操作栏：文件入队后出现，确认后才真正上传 -->
+    <div class="upload-actions" id="uploadActions" hidden>
+      <span class="ua-info" id="uaInfo"></span>
+      <button type="button" class="btn-icon" id="btnClearQueue">清空队列</button>
+      <button type="button" class="btn-primary" id="btnStartUpload">确认上传</button>
+    </div>
+  </section>
+
+  <!-- ===== 照片列表 ===== -->
+  <section class="panel">
+    <div class="panel-head list-head">
+      <div>
+        <h2 class="panel-title">照片列表</h2>
+        <p class="list-result" id="photoResultSummary">正在读取照片…</p>
+      </div>
+      <div class="list-filter">
+        <label class="admin-search" for="photoSearch">
+          <input type="search" id="photoSearch" placeholder="搜索标题、描述或分类" autocomplete="off" />
+        </label>
+        <label class="filter-control" for="filterAlbum"><span>相册</span>
+          <select id="filterAlbum"><option value="">全部相册</option></select>
+        </label>
+        <label class="filter-control" for="photoPageSize"><span>每页</span>
+          <select id="photoPageSize">
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="50">50</option>
+          </select>
+        </label>
+      </div>
+    </div>
+
+    <div class="batch-bar">
+      <label class="batch-all-label"><input type="checkbox" id="checkAll" /> 全选</label>
+      <span class="batch-info">已选 <b id="selCount">0</b> 项</span>
+      <button type="button" class="btn-icon" id="btnBatchPublish" disabled>批量发布</button>
+      <button type="button" class="btn-icon warning" id="btnBatchHide" disabled>批量隐藏</button>
+      <button type="button" class="btn-icon" id="btnBatchWmOn" disabled>批量加水印</button>
+      <button type="button" class="btn-icon warning" id="btnBatchWmOff" disabled>批量去水印</button>
+      <div class="batch-move">
+        <select id="batchAlbum"><option value="">移动到…</option></select>
+        <button type="button" class="btn-icon" id="btnBatchMove" disabled>移动</button>
+      </div>
+      <button type="button" class="btn-icon danger" id="btnBatchDel" disabled>批量删除</button>
+    </div>
+
+    <table class="data-table gallery-table">
+      <thead>
+        <tr>
+          <th style="width:36px"></th>
+          <th style="width:124px">缩略图</th>
+          <th>标题 / 描述</th>
+          <th style="width:130px">相册</th>
+          <th style="width:110px">尺寸</th>
+          <th style="width:80px">大小</th>
+          <th style="width:56px">水印</th>
+          <th style="width:150px">创建 / 更新</th>
+          <th style="width:80px">状态</th>
+          <th style="width:124px; text-align:right">操作</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <tr class="loading-row"><td colspan="10"><div class="table-state"><i class="table-spinner"></i><strong>正在加载照片</strong><span>图片较多时请稍候</span></div></td></tr>
+      </tbody>
+    </table>
+    <div class="table-footer">
+      <span class="page-summary" id="photoPageSummary">0 项</span>
+      <nav class="pagination" id="photoPagination" aria-label="照片列表分页" hidden>
+        <button type="button" class="page-btn" id="photoPrevPage" aria-label="上一页">‹</button>
+        <span class="pagination-pages" id="photoPageButtons"></span>
+        <button type="button" class="page-btn" id="photoNextPage" aria-label="下一页">›</button>
+      </nav>
+    </div>
+  </section>
+
+  <!-- ===== 水印设置 ===== -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">水印设置</h2>
+      <button type="button" class="btn-icon accent" id="btnSaveWm">保存配置</button>
+    </div>
+    <p class="panel-desc">上传水印图（推荐透明背景 PNG）并设置位置与样式。开启水印的照片，前台展示与「查看原图 / 下载」均为烘焙水印后的版本，原图地址不对外暴露。</p>
+    <div class="wm-layout">
+      <div class="wm-upload">
+        <div class="wm-preview" id="wmPreview"><span class="wm-empty">未上传水印图</span></div>
+        <input type="file" id="wmFile" accept="image/jpeg,image/png,image/webp" hidden />
+        <div class="wm-upload-actions">
+          <button type="button" class="btn-icon" id="btnWmUpload">上传水印图</button>
+          <button type="button" class="btn-icon danger" id="btnWmRemove" hidden>移除</button>
+        </div>
+      </div>
+      <div class="wm-controls">
+        <div class="form-row">
+          <label>位置（点选预设位置）</label>
+          <div class="wm-pos-wrap">
+            <div>
+              <div class="wm-pos-grid" id="wmPosGrid"></div>
+              <div class="wm-pos-hint" id="wmPosHint"></div>
+            </div>
+            <div class="wm-stage-wrap">
+              <div class="wm-stage" id="wmStage" title="水印效果预览（不可拖动）">
+                <img class="wm-stage-mark" id="wmStageMark" alt="水印效果预览" draggable="false" />
+                <span class="wm-stage-empty" id="wmStageEmpty">上传水印图后显示预览</span>
+              </div>
+              <div class="wm-stage-cap">效果预览（随设置实时更新）</div>
+            </div>
+          </div>
+        </div>
+        <div class="wm-sliders">
+          <div class="wm-slider-item">
+            <div class="wm-slider-head">
+              <span class="wm-slider-label">不透明度</span>
+              <span class="wm-val" id="wmOpacityVal"></span>
+            </div>
+            <input type="range" id="wmOpacity" min="0" max="100" step="5" aria-label="不透明度" />
+            <div class="wm-slider-scale"><span>0%</span><span>100%</span></div>
+          </div>
+          <div class="wm-slider-item">
+            <div class="wm-slider-head">
+              <span class="wm-slider-label">水印宽度<span class="wm-slider-sub">占图片宽度</span></span>
+              <span class="wm-val" id="wmScaleVal"></span>
+            </div>
+            <input type="range" id="wmScale" min="5" max="60" step="1" aria-label="水印宽度" />
+            <div class="wm-slider-scale"><span>5%</span><span>60%</span></div>
+          </div>
+          <div class="wm-slider-item">
+            <div class="wm-slider-head">
+              <span class="wm-slider-label">边距<span class="wm-slider-sub">占图片短边</span></span>
+              <span class="wm-val" id="wmMarginVal"></span>
+            </div>
+            <input type="range" id="wmMargin" min="0" max="20" step="1" aria-label="边距" />
+            <div class="wm-slider-scale"><span>0%</span><span>20%</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Metadata 公开配置 ===== -->
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Metadata 公开配置</h2>
+      <button type="button" class="btn-icon accent" id="btnSaveMeta">保存配置</button>
+    </div>
+    <p class="panel-desc">控制前台图片信息面板可展示的 EXIF 字段。GPS 位置属敏感信息，默认不公开；关闭后 API 不会下发对应数据。</p>
+    <div class="meta-grid" id="metaGrid"></div>
+  </section>
+
+  <!-- ===== Album 弹窗 ===== -->
+  <div class="modal" id="albumModal">
+    <div class="modal-content">
+      <h2 class="modal-title" id="albumModalTitle">新建相册</h2>
+      <div class="form-row">
+        <label>名称 <span class="req">*</span><span class="field-hint">（唯一必填项）</span></label>
+        <input type="text" id="a_name" maxlength="200" placeholder="例如：旅行 / 日常 / 美食" />
+      </div>
+      <div class="form-row">
+        <label>描述 <span class="field-hint">（可选）</span></label>
+        <textarea id="a_description" rows="2" maxlength="1000"></textarea>
+      </div>
+      <div class="form-row">
+        <label>封面图地址 <span class="field-hint">（可选，留空则前台自动取相册内首图）</span></label>
+        <input type="text" id="a_cover" placeholder="https://…" />
+      </div>
+      <div class="form-row-inline">
+        <div class="inline">
+          <div class="inline-item">
+            <label>排序</label>
+            <input type="number" id="a_sortOrder" value="0" />
+          </div>
+          <div class="inline-item switch-item">
+            <label class="switch-label"><input type="checkbox" id="a_published" checked /> 公开</label>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="btnAlbumSave">保存</button>
+        <button type="button" class="btn-secondary" id="btnAlbumCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 照片编辑弹窗（标题 / 描述） ===== -->
+  <div class="modal" id="photoModal">
+    <div class="modal-content">
+      <h2 class="modal-title">编辑照片</h2>
+      <div class="modal-photo-preview" id="photoModalPreview"></div>
+      <div class="form-row">
+        <label>标题 <span class="field-hint">（可选，留空则不显示）</span></label>
+        <input type="text" id="p_title" maxlength="200" placeholder="照片标题" />
+        <span class="field-error" id="p_titleErr"></span>
+      </div>
+      <div class="form-row">
+        <label>描述 <span class="field-hint">（可选，最多 1000 字）</span></label>
+        <textarea id="p_description" rows="4" maxlength="1000" placeholder="为这张照片写点什么…"></textarea>
+        <span class="field-error" id="p_descErr"></span>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn-primary" id="btnPhotoSave">保存</button>
+        <button type="button" class="btn-secondary" id="btnPhotoCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 图片预览层（原始比例，contain） ===== -->
+  <div class="preview" id="preview" hidden>
+    <div class="preview-backdrop" data-preview-close></div>
+    <img class="preview-image" id="previewImage" alt="预览" />
+    <button type="button" class="preview-close" aria-label="关闭预览">×</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<!--
+  注意：表格行（相册 / 照片列表）由 JS innerHTML 动态渲染，动态元素不带 data-astro-cid 属性，
+  scoped 样式无法命中，故本页样式统一使用 is:global（仅随 /admin/gallery 页面加载，不污染其它页面）。
+-->
+<style is:global>
+  body:has(#openGallerySettings) .content{max-width:1360px;margin:auto;width:100%}
+  body:has(#openGallerySettings) .content{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+  body:has(#openGallerySettings) .page-head{width:100%}
+  body:has(#openGallerySettings) .content>section.panel:nth-of-type(1),body:has(#openGallerySettings) .content>section.panel:nth-of-type(2){width:calc(50% - 9px);margin:0}
+  body:has(#openGallerySettings) .content>section.panel:nth-of-type(3){width:100%}
+  #gallerySettingsDialog{position:fixed;inset:0;margin:auto;width:min(1000px,94vw);max-height:88dvh;overflow:auto;padding:24px;border:1px solid #dce1ea;border-radius:14px;background:#fff;color:#283344}
+  #gallerySettingsDialog::backdrop{background:#17202b70}#gallerySettingsDialog .panel{margin-top:20px}#gallerySettingsDialog .panel-title{font-size:18px}
+  @media(max-width:900px){body:has(#openGallerySettings) .content>section.panel:nth-of-type(1),body:has(#openGallerySettings) .content>section.panel:nth-of-type(2){width:100%}}
+  /* 页面滚动条由 AdminLayout 统一提供；表格内部滚动也保留可见反馈。 */
+  .page-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 16px; }
+  .page-title { font-size: 1.25rem; font-weight: 700; }
+  .page-desc { font-size: 0.8125rem; color: var(--admin-muted); margin-top: 2px; }
+  /* 面板 */
+  .panel { margin-bottom: 20px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .panel-title { font-size: 1rem; font-weight: 700; }
+  .list-result { margin-top: 2px; color: var(--admin-muted); font-size: 0.75rem; }
+  .panel-desc { font-size: 0.75rem; color: var(--admin-muted); margin-bottom: 10px; }
+  /* 表格 */
+  .data-table {
+    width: 100%; border-collapse: collapse; background: var(--admin-bg);
+    border: 1px solid var(--admin-border); border-radius: 12px; overflow: hidden;
+  }
+  .data-table th {
+    text-align: left; padding: 10px 12px; font-size: 0.75rem;
+    letter-spacing: 0.05em; color: var(--admin-muted);
+    background: #f9f9fa; border-bottom: 1px solid var(--admin-border);
+  }
+  .data-table td { padding: 10px 12px; font-size: 0.8125rem; border-bottom: 1px solid var(--admin-border); vertical-align: middle; }
+  .data-table tbody tr:hover { background: #f8f9fb; }
+  .data-table tbody tr:last-child td { border-bottom: none; }
+  .empty-row td { text-align: center; color: var(--admin-muted); padding: 24px 0; }
+  .cell-title { font-weight: 500; color: #1f2937; }
+  .cell-desc { font-size: 0.75rem; color: var(--admin-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+  .cell-time { font-size: 0.7rem; color: var(--admin-muted); line-height: 1.5; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+  .badge-on { background: #dcfce7; color: #15803d; }
+  .badge-off { background: #fee2e2; color: #b91c1c; }
+  /* fixed 布局：各列按 th 宽度分配，未指定宽度的「标题/描述」列吃掉剩余空间（auto 布局会按内容挤压短文本列） */
+  .gallery-table { table-layout: fixed; }
+  .gallery-table th:nth-child(2), .gallery-table td:nth-child(2) { width: 124px; vertical-align: middle; text-align: center; }
+  /* 标题列内容防溢出 */
+  .gallery-table .cell-title, .gallery-table .cell-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thumb-box {
+    width: 104px; height: 62px; margin: 0 auto; flex: 0 0 104px; display: flex; align-items: center; justify-content: center;
+    background: repeating-conic-gradient(#f1f1f4 0% 25%, #ffffff 0% 50%) 0 0 / 12px 12px;
+    border: 1px solid var(--admin-border); border-radius: 6px; overflow: hidden; cursor: zoom-in;
+  }
+  /* 关键修复：img 严格按容器尺寸展示（object-fit: contain 保持比例，max-width/height 无法约束竖/横超长图） */
+  .thumb-box img {
+    width: 100%; height: 100%; object-fit: contain; display: block;
+  }
+  /* 相册封面小号变体（64×40） */
+  .thumb-box--sm { width: 64px; height: 40px; flex: 0 0 64px; }
+  /* 下拉与输入 */
+  select, input[type="number"], input[type="text"] {
+    padding: 5px 8px; border: 1px solid var(--admin-border); border-radius: 6px;
+    font-size: 0.8125rem; background: var(--admin-bg);
+  }
+  select:focus, input:focus { outline: none; border-color: var(--admin-primary); }
+  .sort-input { width: 56px; text-align: center; }
+  .album-select { max-width: 130px; }
+  /* 上传区 */
+  .upload-target, .list-filter { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; color: var(--admin-muted); }
+  .dropzone {
+    border: 2px dashed var(--admin-border); border-radius: 12px; padding: 28px 16px;
+    text-align: center; cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--admin-primary); background: #f6f9ff; }
+  .dz-main { font-weight: 600; font-size: 0.9375rem; }
+  .dz-sub { font-size: 0.75rem; color: var(--admin-muted); margin-top: 4px; }
+  /* 上传队列 */
+  .upload-queue { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+  .upload-queue li {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border: 1px solid var(--admin-border); border-radius: 8px; font-size: 0.8125rem;
+  }
+  .upload-queue .q-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .upload-queue .q-status { color: var(--admin-muted); flex-shrink: 0; }
+  .upload-queue .q-status.ok { color: #15803d; }
+  .upload-queue .q-status.fail { color: #b91c1c; }
+  .upload-queue .q-progress { width: 140px; height: 6px; background: #ececf0; border-radius: 999px; overflow: hidden; flex-shrink: 0; }
+  .upload-queue .q-progress i { display: block; height: 100%; width: 0; background: var(--admin-primary); transition: width 0.15s; }
+  .upload-queue .q-btn { border: none; background: transparent; color: var(--admin-primary); cursor: pointer; font-size: 0.75rem; padding: 2px 6px; }
+  .upload-queue .q-btn.danger { color: #b91c1c; }
+  /* 上传确认操作栏 */
+  .upload-actions {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 12px; padding: 10px 14px;
+    background: var(--admin-bg); border: 1px solid var(--admin-border); border-radius: 10px;
+  }
+  .upload-actions .ua-info { flex: 1; min-width: 0; font-size: 0.8125rem; color: var(--admin-muted); }
+  .upload-actions .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  /* 表单字段可选项提示 */
+  .field-hint { color: var(--admin-muted); font-weight: 400; font-size: 0.75em; }
+  /* 字段校验错误提示 */
+  .field-error { display: block; min-height: 1em; margin-top: 4px; font-size: 0.75rem; color: #b91c1c; }
+  /* 照片编辑弹窗内缩略预览（棋盘格底 + contain） */
+  .modal-photo-preview {
+    margin-bottom: 14px; height: 160px; display: flex; align-items: center; justify-content: center;
+    background: repeating-conic-gradient(#f1f1f4 0% 25%, #ffffff 0% 50%) 0 0 / 12px 12px;
+    border: 1px solid var(--admin-border); border-radius: 8px; overflow: hidden;
+  }
+  .modal-photo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  /* 批量条 */
+  .batch-bar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 12px; padding: 10px 14px;
+    background: var(--admin-bg); border: 1px solid var(--admin-border); border-radius: 10px;
+  }
+  .batch-info { font-size: 0.8125rem; color: var(--admin-muted); }
+  .batch-all-label { display: flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: var(--admin-muted); cursor: pointer; }
+  .batch-move { display: flex; align-items: center; gap: 6px; }
+  /* Metadata 配置网格 */
+  .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+  .meta-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--admin-border); border-radius: 8px; font-size: 0.8125rem; }
+  .meta-item input { accent-color: var(--admin-primary); }
+  .meta-item .sensitive { color: #b91c1c; font-size: 0.7rem; }
+  /* 水印设置面板 */
+  .wm-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; }
+  @media (max-width: 720px) { .wm-layout { grid-template-columns: 1fr; } }
+  .wm-preview {
+    width: 220px; height: 140px; display: flex; align-items: center; justify-content: center;
+    background: repeating-conic-gradient(#f1f1f4 0% 25%, #ffffff 0% 50%) 0 0 / 12px 12px;
+    border: 1px solid var(--admin-border); border-radius: 8px; overflow: hidden;
+  }
+  .wm-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .wm-empty { font-size: 0.75rem; color: var(--admin-muted); }
+  .wm-upload-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .wm-controls .form-row { margin-bottom: 16px; }
+  .wm-controls label { display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 6px; }
+  /* 数值徽标：等宽数字 + 主色浅底胶囊，拖动滑杆时实时刷新 */
+  .wm-val {
+    font-family: monospace; font-size: 0.75rem; color: var(--admin-primary);
+    background: #eff4ff; border: 1px solid #dbe5ff; border-radius: 999px;
+    padding: 1px 10px; min-width: 52px; text-align: center; line-height: 1.5;
+  }
+  /* 位置选择：3×3 九宫格（仅五个有效位，其余为占位） */
+  .wm-pos-grid { display: grid; grid-template-columns: repeat(3, 44px); grid-auto-rows: 36px; gap: 4px; }
+  .wm-pos-grid button {
+    border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-bg);
+    cursor: pointer; font-size: 0.625rem; color: var(--admin-muted); transition: all 0.12s;
+  }
+  .wm-pos-grid button:hover { border-color: var(--admin-primary); }
+  .wm-pos-grid button.active { background: var(--admin-primary); color: #fff; border-color: var(--admin-primary); }
+  .wm-pos-grid button:disabled { opacity: 0.25; cursor: default; }
+  /* 位置区：预设九宫格 + 静态效果预览并排（预览仅展示，不可交互） */
+  .wm-pos-wrap { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .wm-pos-hint { margin-top: 6px; font-size: 0.6875rem; color: var(--admin-muted); min-height: 1em; max-width: 160px; }
+  .wm-stage-wrap { flex: 0 0 auto; width: 240px; }
+  .wm-stage-cap { margin-top: 6px; font-size: 0.6875rem; color: var(--admin-muted); text-align: center; }
+  /* 静态预览台：棋盘格模拟照片，水印位置/大小/透明度随设置实时渲染（pointer-events:none 彻底禁用拖拽） */
+  .wm-stage {
+    position: relative; width: 100%; aspect-ratio: 4 / 3;
+    background: repeating-conic-gradient(#e9e9ee 0% 25%, #f8f8fa 0% 50%) 0 0 / 16px 16px;
+    border: 1px solid var(--admin-border); border-radius: 8px; overflow: hidden;
+    pointer-events: none;
+  }
+  .wm-stage-mark { position: absolute; display: none; }
+  .wm-stage-empty {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 0.6875rem; color: var(--admin-muted);
+  }
+  @media (max-width: 720px) { .wm-stage-wrap { width: 100%; } }
+  /* 滑杆设置组：三张紧凑卡片并排（窄屏纵向堆叠），替代原先三条通长滑杆 */
+  .wm-sliders { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .wm-slider-item {
+    border: 1px solid var(--admin-border); border-radius: 8px; background: var(--admin-bg);
+    padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .wm-slider-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .wm-slider-label { font-size: 0.8125rem; color: #374151; display: flex; align-items: baseline; gap: 4px; }
+  .wm-slider-sub { font-size: 0.6875rem; color: var(--admin-muted); }
+  .wm-slider-item input[type="range"] {
+    width: 100%; accent-color: var(--admin-primary); cursor: pointer; margin: 4px 0 0;
+    min-height: 24px;
+  }
+  .wm-slider-item input[type="range"]:focus-visible { outline: 2px solid var(--admin-primary); outline-offset: 2px; }
+  .wm-slider-scale { display: flex; justify-content: space-between; font-size: 0.625rem; color: var(--admin-muted); font-family: monospace; }
+  @media (max-width: 720px) { .wm-sliders { grid-template-columns: 1fr; } }
+  /* 水印列徽章 */
+  .badge-wm { background: #dbeafe; color: #1d4ed8; }
+  /* 弹窗 */
+  .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; align-items: center; justify-content: center; }
+  .modal.show { display: flex; }
+  .modal-content { width: 520px; max-width: 92vw; background: var(--admin-bg); border-radius: 12px; padding: 24px; max-height: 92vh; overflow-y: auto; }
+  .modal-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 14px; }
+  .form-row { margin-bottom: 12px; }
+  .form-row > label { display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px; }
+  .form-row input, .form-row textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border);
+    border-radius: 8px; font-size: 0.875rem; background: var(--admin-bg);
+  }
+  .form-row input:focus, .form-row textarea:focus { outline: none; border-color: var(--admin-primary); }
+  .form-row-inline { margin-bottom: 12px; }
+  .inline { display: flex; gap: 10px; align-items: center; }
+  .inline-item { flex: 1; min-width: 0; }
+  .inline-item > label { display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px; }
+  .switch-label { font-size: 0.8125rem; color: var(--admin-muted); display: flex; align-items: center; gap: 8px; }
+  .switch-label input { accent-color: var(--admin-primary); }
+  .req { color: #b91c1c; }
+  .form-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn-primary { padding: 8px 16px; background: var(--admin-primary); color: #fff; border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-secondary { padding: 8px 16px; background: transparent; color: var(--admin-muted); border: 1px solid var(--admin-border); border-radius: 8px; font-size: 0.875rem; cursor: pointer; }
+  .btn-secondary:hover { background: #f0f0f3; }
+  /* 预览层 */
+  .preview { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; }
+  .preview[hidden] { display: none; }
+  .preview-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.85); }
+  .preview-image { position: relative; max-width: 92vw; max-height: 90vh; object-fit: contain; }
+  .preview-close {
+    position: absolute; top: 16px; right: 16px; width: 36px; height: 36px;
+    border-radius: 50%; border: none; background: rgba(255,255,255,0.12);
+    color: #fff; font-size: 1.3rem; cursor: pointer;
+  }
+
+  /* ========== 移动端（≤768px） ========== */
+  @media (max-width: 768px) {
+    /* 页头标题与操作按钮纵向堆叠，避免挤压 */
+    .page-head { flex-direction: column; align-items: stretch; gap: 10px; }
+    .page-head .btn-icon, .page-head .btn-primary { align-self: flex-start; }
+    /* 上传目标 / 筛选 / 行内表单项允许换行 */
+    .upload-target, .list-filter { flex-wrap: wrap; }
+    .inline { flex-wrap: wrap; }
+    .inline-item { flex: 1 1 100%; }
+    /* 弹窗内主按钮全宽，便于触控 */
+    .modal .form-actions { flex-direction: column-reverse; }
+    .modal .form-actions .btn-primary,
+    .modal .form-actions .btn-secondary { width: 100%; padding: 11px 16px; }
+    /* 预览大图关闭键加大到 44px */
+    .preview-close { width: 44px; height: 44px; top: calc(12px + env(safe-area-inset-top, 0px)); }
+  }
+</style>
+
+<script>
+  const settingsDialog=document.createElement('dialog');settingsDialog.id='gallerySettingsDialog';
+  const closeSettings=document.createElement('button');closeSettings.type='button';closeSettings.className='btn-icon';closeSettings.textContent='关闭设置';closeSettings.onclick=()=>settingsDialog.close();settingsDialog.append(closeSettings);
+  const galleryPanels=Array.from(document.querySelectorAll('.content>section.panel'));
+  galleryPanels.slice(3,5).forEach(panel=>settingsDialog.append(panel));document.body.append(settingsDialog);
+  document.getElementById('openGallerySettings')!.onclick=()=>settingsDialog.showModal();
+  const translated:Record<string,string>={'Camera':'相机型号','Lens':'镜头型号','Focal Length':'焦距','Aperture':'光圈','Shutter':'快门速度','Date':'拍摄时间','Dimensions':'图片尺寸','File Size':'文件大小','GPS Location':'拍摄位置（GPS）'};
+  const metaObserver=new MutationObserver(()=>{settingsDialog.querySelectorAll('label').forEach(label=>{label.childNodes.forEach(node=>{if(node.nodeType===Node.TEXT_NODE&&translated[node.textContent?.trim()||''])node.textContent=' '+translated[node.textContent!.trim()];});});});metaObserver.observe(settingsDialog,{childList:true,subtree:true});
+  import { formatUtcToLocal } from '../../lib/datetime';
+
+  const toast = document.getElementById('toast')!;
+  /** 轻量提示（3 秒自动消失） */
+  function showToast(msg: string): void {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+
+  /** 字节大小 → 可读字符串 */
+  function formatSize(bytes?: number | null): string {
+    if (bytes == null) return '—';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+
+  /** HTML 转义（防 XSS） */
+  function esc(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* ========== 相册分组 ========== */
+  /** 相册列表缓存（下拉与列表共用） */
+  let albums: any[] = [];
+
+  /** 加载相册列表并刷新所有相册下拉 */
+  async function loadAlbums(): Promise<void> {
+    const res = await fetch('/api/admin/albums');
+    if (res.status === 401) { location.href = (window as any).__ADMIN_BASE__ || '/admin'; return; }
+    albums = await res.json();
+    renderAlbums();
+    // 同步三个相册下拉：上传目标 / 筛选 / 批量移动
+    const selects = [
+      document.getElementById('uploadAlbum') as HTMLSelectElement,
+      document.getElementById('filterAlbum') as HTMLSelectElement,
+      document.getElementById('batchAlbum') as HTMLSelectElement,
+    ];
+    for (const sel of selects) {
+      const prevValue = sel.value;
+      const first = sel.options[0];
+      sel.innerHTML = '';
+      if (first) sel.appendChild(first);
+      for (const a of albums) {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = `${a.name}（${a.photoCount ?? 0}）`;
+        sel.appendChild(opt);
+      }
+      // 重建选项后尽量保留用户已选值
+      sel.value = prevValue;
+    }
+  }
+
+  /** 渲染相册表格 */
+  function renderAlbums(): void {
+    const body = document.getElementById('albumBody')!;
+    if (!albums.length) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="6"><div class="table-state"><span class="table-state-icon">▧</span><strong>还没有相册</strong><span>点击“新建相册”创建第一个分组</span></div></td></tr>';
+      return;
+    }
+    body.innerHTML = albums
+      .map(
+        (a) => `
+      <tr>
+        <td>${a.cover ? `<div class="thumb-box thumb-box--sm" data-preview="${esc(a.cover)}"><img src="${esc(a.cover)}" alt="" loading="lazy" decoding="async" /></div>` : '<span style="color:var(--admin-muted)">—</span>'}</td>
+        <td><div class="cell-title">${esc(a.name)}</div>${a.description ? `<div class="cell-desc">${esc(a.description)}</div>` : ''}</td>
+        <td>${a.photoCount ?? 0}</td>
+        <td><input type="number" class="sort-input" data-a-sort="${a.id}" value="${a.sortOrder}" /></td>
+        <td><span class="badge ${a.published ? 'badge-on' : 'badge-off'}">${a.published ? '公开' : '隐藏'}</span></td>
+        <td><div class="row-actions">
+          <button class="btn-icon" data-a-edit="${a.id}">编辑</button>
+          <button class="btn-icon danger" data-a-del="${a.id}">删除</button>
+        </div></td>
+      </tr>`
+      )
+      .join('');
+
+    body.querySelectorAll<HTMLInputElement>('[data-a-sort]').forEach((input) => {
+      input.addEventListener('change', async () => {
+        const id = parseInt(input.dataset.aSort!, 10);
+        await fetch(`/api/admin/albums/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sortOrder: parseInt(input.value, 10) || 0 }),
+        });
+        showToast('排序已更新');
+        loadAlbums();
+      });
+    });
+    body.querySelectorAll<HTMLButtonElement>('[data-a-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => openAlbumModal(albums.find((x) => String(x.id) === String(btn.dataset.aEdit))));
+    });
+    body.querySelectorAll<HTMLButtonElement>('[data-a-del]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const album = albums.find((x) => String(x.id) === String(btn.dataset.aDel));
+        if (!album) return;
+        // 删除确认：明确告知照片不会被删除
+        if (!confirm(`确定删除相册「${album.name}」？\n相册内 ${album.photoCount ?? 0} 张照片不会被删除，将变为「未分组」。`)) return;
+        const res = await fetch(`/api/admin/albums/${album.id}`, { method: 'DELETE' });
+        if (res.ok) { showToast('相册已删除'); loadAlbums(); loadList(); }
+        else showToast((await res.json()).error || '删除失败');
+      });
+    });
+  }
+
+  /** Album 弹窗状态 */
+  const albumModal = document.getElementById('albumModal') as HTMLElement;
+  let editingAlbumId: string | number | null = null;
+
+  /**
+   * 计算下一个建议排序值（现有相册最大 sortOrder + 1，空表从 0 开始）
+   * @returns 建议排序值
+   */
+  function nextAlbumSortOrder(): number {
+    return albums.reduce((m, a) => Math.max(m, Number(a.sortOrder) || 0), -1) + 1;
+  }
+
+  /**
+   * 打开相册弹窗（album 为空 = 新建）
+   * 新建：排序自动延续为「最大排序值 + 1」；编辑：完整回填被编辑相册数据
+   * @param album 被编辑的相册对象；省略表示新建
+   */
+  function openAlbumModal(album?: any): void {
+    editingAlbumId = album ? album.id : null;
+    document.getElementById('albumModalTitle')!.textContent = editingAlbumId ? '编辑相册' : '新建相册';
+    (document.getElementById('a_name') as HTMLInputElement).value = album?.name ?? '';
+    (document.getElementById('a_description') as HTMLTextAreaElement).value = album?.description ?? '';
+    (document.getElementById('a_cover') as HTMLInputElement).value = album?.cover ?? '';
+    // 新建自动递增排序；编辑沿用原值
+    (document.getElementById('a_sortOrder') as HTMLInputElement).value = String(album ? (Number(album.sortOrder) || 0) : nextAlbumSortOrder());
+    (document.getElementById('a_published') as HTMLInputElement).checked = album ? !!album.published : true;
+    albumModal.classList.add('show');
+    (document.getElementById('a_name') as HTMLInputElement).focus();
+  }
+
+  document.getElementById('btnAddAlbum')!.addEventListener('click', () => openAlbumModal());
+  document.getElementById('btnAlbumCancel')!.addEventListener('click', () => albumModal.classList.remove('show'));
+  albumModal.addEventListener('click', (e) => { if (e.target === albumModal) albumModal.classList.remove('show'); });
+
+  document.getElementById('btnAlbumSave')!.addEventListener('click', async () => {
+    const name = (document.getElementById('a_name') as HTMLInputElement).value.trim();
+    if (!name) { showToast('请填写相册名称'); return; }
+    const payload = {
+      name,
+      description: (document.getElementById('a_description') as HTMLTextAreaElement).value.trim() || null,
+      cover: (document.getElementById('a_cover') as HTMLInputElement).value.trim() || null,
+      sortOrder: parseInt((document.getElementById('a_sortOrder') as HTMLInputElement).value, 10) || 0,
+      published: (document.getElementById('a_published') as HTMLInputElement).checked,
+    };
+    const res = await fetch(editingAlbumId ? `/api/admin/albums/${editingAlbumId}` : '/api/admin/albums', {
+      method: editingAlbumId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      showToast('已保存');
+      albumModal.classList.remove('show');
+      loadAlbums();
+    } else showToast((await res.json()).error || '保存失败');
+  });
+
+  /* ========== 多文件上传队列 ========== */
+  /** 上传队列项 */
+  interface QueueItem {
+    file: File;
+    status: 'pending' | 'uploading' | 'done' | 'fail';
+    progress: number;
+    error?: string;
+    xhr?: XMLHttpRequest;
+  }
+  /** 待上传文件队列（仅前端本地状态，成功后自动移出） */
+  let queue: QueueItem[] = [];
+  const dropzone = document.getElementById('dropzone')!;
+  const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+  const uploadQueueEl = document.getElementById('uploadQueue')!;
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    addFiles(e.dataTransfer?.files);
+  });
+  fileInput.addEventListener('change', () => { addFiles(fileInput.files); fileInput.value = ''; });
+
+  /** 前端基础验证（类型/大小）后加入队列；仅入队等待，不自动上传（需确认） */
+  function addFiles(files: FileList | null | undefined): void {
+    if (!files?.length) return;
+    const okTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    let added = 0;
+    for (const file of Array.from(files)) {
+      if (!okTypes.includes(file.type)) { showToast(`${file.name}：类型不支持`); continue; }
+      if (file.size > 10 * 1024 * 1024) { showToast(`${file.name}：超过 10MB`); continue; }
+      queue.push({ file, status: 'pending', progress: 0 });
+      added++;
+    }
+    if (added > 0 && !(document.getElementById('uploadAlbum') as HTMLSelectElement).value) {
+      showToast('请先选择目标相册，再确认上传');
+    }
+    renderQueue();
+  }
+
+  /** 同步确认操作栏的显隐与提示文案 */
+  function syncUploadActions(): void {
+    const bar = document.getElementById('uploadActions')!;
+    const info = document.getElementById('uaInfo')!;
+    const pendingCount = queue.filter((q) => q.status === 'pending').length;
+    const uploading = queue.some((q) => q.status === 'uploading');
+    bar.hidden = queue.length === 0;
+    const albumSel = document.getElementById('uploadAlbum') as HTMLSelectElement;
+    const albumName = albumSel.selectedOptions[0]?.textContent ?? '';
+    info.textContent = `共 ${queue.length} 个文件（待上传 ${pendingCount}），目标相册：${albumSel.value ? albumName : '未选择'}`;
+    (document.getElementById('btnStartUpload') as HTMLButtonElement).disabled = uploading || pendingCount === 0;
+  }
+
+  /** 渲染上传队列 */
+  function renderQueue(): void {
+    uploadQueueEl.innerHTML = queue
+      .map(
+        (item, i) => `
+      <li>
+        <span class="q-name">${esc(item.file.name)}</span>
+        ${item.status === 'uploading' ? `<div class="q-progress"><i style="width:${item.progress}%"></i></div><span class="q-status">Uploading… ${item.progress}%</span>` : ''}
+        ${item.status === 'pending' ? '<span class="q-status">等待确认</span>' : ''}
+        ${item.status === 'done' ? '<span class="q-status ok">Completed</span>' : ''}
+        ${item.status === 'fail' ? `<span class="q-status fail">Failed${item.error ? `：${esc(item.error)}` : ''}</span><button type="button" class="q-btn" data-retry="${i}">Retry</button>` : ''}
+        ${item.status !== 'uploading' ? `<button type="button" class="q-btn danger" data-remove="${i}">移除</button>` : ''}
+      </li>`
+      )
+      .join('');
+    uploadQueueEl.querySelectorAll<HTMLButtonElement>('[data-retry]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const item = queue[parseInt(btn.dataset.retry!, 10)];
+        if (item) { item.status = 'pending'; item.progress = 0; renderQueue(); void startUpload(true); }
+      });
+    });
+    uploadQueueEl.querySelectorAll<HTMLButtonElement>('[data-remove]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        queue.splice(parseInt(btn.dataset.remove!, 10), 1);
+        renderQueue();
+      });
+    });
+    syncUploadActions();
+  }
+
+  /**
+   * 开始上传（含确认步骤与相册必选校验）
+   * @param isRetry 重试场景：确认已完成，跳过 confirm 弹窗，但仍校验相册
+   */
+  async function startUpload(isRetry = false): Promise<void> {
+    if (queue.some((q) => q.status === 'uploading')) return;
+    const pending = queue.filter((q) => q.status === 'pending');
+    if (!pending.length) return;
+    const albumSel = document.getElementById('uploadAlbum') as HTMLSelectElement;
+    // 强制顺序：必须先选择目标相册
+    if (!albumSel.value) {
+      showToast('请先选择目标相册');
+      albumSel.focus();
+      return;
+    }
+    const albumName = albumSel.selectedOptions[0]?.textContent ?? '';
+    // 上传前确认步骤（重试单个文件时不再重复确认）
+    if (!isRetry && !confirm(`确认将 ${pending.length} 个文件上传到相册「${albumName}」？`)) return;
+    await processQueue();
+  }
+
+  /** 清空待上传队列（上传中的文件不受影响） */
+  document.getElementById('btnClearQueue')!.addEventListener('click', () => {
+    if (queue.some((q) => q.status === 'uploading')) { showToast('上传进行中，无法清空'); return; }
+    queue = [];
+    renderQueue();
+  });
+  document.getElementById('btnStartUpload')!.addEventListener('click', () => void startUpload(false));
+
+  /** 串行处理队列（逐文件上传，单个失败不影响后续；进度经 XHR 上报） */
+  async function processQueue(): Promise<void> {
+    // 防御性兜底：无相册不允许上传
+    if (!(document.getElementById('uploadAlbum') as HTMLSelectElement).value) {
+      showToast('请先选择目标相册');
+      syncUploadActions();
+      return;
+    }
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      if (item.status !== 'pending') continue;
+      item.status = 'uploading';
+      renderQueue();
+      const ok = await uploadOne(item);
+      item.status = ok ? 'done' : 'fail';
+      if (ok) setTimeout(() => { queue = queue.filter((q) => q !== item); renderQueue(); }, 1200);
+      else renderQueue();
+    }
+    // 全部结束后刷新列表（有成功才刷新）
+    if (queue.every((q) => q.status !== 'uploading')) { syncUploadActions(); loadList(); }
+  }
+
+  /** 上传单个文件（带进度回调与取消能力） */
+  function uploadOne(item: QueueItem): Promise<boolean> {
+    return new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      item.xhr = xhr;
+      const formData = new FormData();
+      formData.append('file', item.file);
+      const albumId = (document.getElementById('uploadAlbum') as HTMLSelectElement).value;
+      if (albumId) formData.append('albumId', albumId);
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          item.progress = Math.round((e.loaded / e.total) * 100);
+          renderQueue();
+        }
+      });
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) { resolve(true); loadAlbums(); }
+        else {
+          try { item.error = JSON.parse(xhr.responseText).error || `HTTP ${xhr.status}`; }
+          catch { item.error = `HTTP ${xhr.status}`; }
+          resolve(false);
+        }
+      });
+      xhr.addEventListener('error', () => { item.error = '网络错误'; resolve(false); });
+      xhr.open('POST', '/api/admin/gallery');
+      xhr.send(formData);
+    });
+  }
+
+  /* ========== 照片列表 ========== */
+  const tableBody = document.getElementById('tableBody')!;
+  /** 照片列表缓存 */
+  let photos: any[] = [];
+  const filterAlbum = document.getElementById('filterAlbum') as HTMLSelectElement;
+  const photoSearch = document.getElementById('photoSearch') as HTMLInputElement;
+  const photoPageSize = document.getElementById('photoPageSize') as HTMLSelectElement;
+  const photoResultSummary = document.getElementById('photoResultSummary')!;
+  const photoPageSummary = document.getElementById('photoPageSummary')!;
+  const photoPagination = document.getElementById('photoPagination')!;
+  const photoPageButtons = document.getElementById('photoPageButtons')!;
+  const photoPrevPage = document.getElementById('photoPrevPage') as HTMLButtonElement;
+  const photoNextPage = document.getElementById('photoNextPage') as HTMLButtonElement;
+  let currentPhotoPage = 1;
+
+  /** 加载照片列表（可按相册筛选） */
+  async function loadList(): Promise<void> {
+    tableBody.innerHTML = '<tr class="loading-row"><td colspan="10"><div class="table-state"><i class="table-spinner"></i><strong>正在加载照片</strong><span>图片较多时请稍候</span></div></td></tr>';
+    photoResultSummary.textContent = '正在读取照片…';
+    try {
+      const res = await fetch('/api/admin/gallery');
+      if (res.status === 401) { location.href = (window as any).__ADMIN_BASE__ || '/admin'; return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      photos = await res.json();
+      renderPhotos();
+    } catch {
+      photos = [];
+      photoResultSummary.textContent = '加载失败';
+      photoPageSummary.textContent = '0 项';
+      photoPagination.hidden = true;
+      tableBody.innerHTML = '<tr class="error-row"><td colspan="10"><div class="table-state"><span class="table-state-icon">!</span><strong>照片加载失败</strong><span>请检查网络后点击重试</span><button type="button" class="btn-icon" data-list-retry>重新加载</button></div></td></tr>';
+      tableBody.querySelector('[data-list-retry]')?.addEventListener('click', loadList);
+    }
+  }
+
+  /** 更新分页按钮与范围摘要。 */
+  function renderPhotoPagination(total: number, totalPages: number, pageSize: number): void {
+    const start = total ? (currentPhotoPage - 1) * pageSize + 1 : 0;
+    const end = Math.min(total, currentPhotoPage * pageSize);
+    photoPageSummary.textContent = total ? `显示 ${start}–${end} 项，共 ${total} 项` : '0 项';
+    photoPagination.hidden = totalPages <= 1;
+    photoPrevPage.disabled = currentPhotoPage <= 1;
+    photoNextPage.disabled = currentPhotoPage >= totalPages;
+
+    // 页数很多时仅展示当前页附近，避免分页控件无限增长。
+    const pages = new Set([1, totalPages]);
+    for (let page = currentPhotoPage - 1; page <= currentPhotoPage + 1; page += 1) {
+      if (page >= 1 && page <= totalPages) pages.add(page);
+    }
+    let previous = 0;
+    photoPageButtons.innerHTML = [...pages].sort((a, b) => a - b).map((page) => {
+      const gap = previous && page - previous > 1 ? '<span class="page-gap">…</span>' : '';
+      previous = page;
+      return `${gap}<button type="button" class="page-btn ${page === currentPhotoPage ? 'active' : ''}" data-photo-page="${page}" aria-label="第 ${page} 页" ${page === currentPhotoPage ? 'aria-current="page"' : ''}>${page}</button>`;
+    }).join('');
+    photoPageButtons.querySelectorAll<HTMLButtonElement>('[data-photo-page]').forEach((button) => {
+      button.addEventListener('click', () => {
+        currentPhotoPage = parseInt(button.dataset.photoPage!, 10);
+        renderPhotos();
+      });
+    });
+  }
+
+  /** 按当前搜索、相册筛选与分页状态渲染照片表格。 */
+  function renderPhotos(): void {
+    const query = photoSearch.value.trim().toLocaleLowerCase('zh-CN');
+    const filtered = photos.filter((p) => {
+      if (filterAlbum.value && p.albumId !== filterAlbum.value) return false;
+      if (!query) return true;
+      const albumName = albums.find((album) => album.id === p.albumId)?.name ?? '';
+      return [p.title, p.description, p.category, albumName]
+        .some((value) => String(value ?? '').toLocaleLowerCase('zh-CN').includes(query));
+    });
+    const pageSize = parseInt(photoPageSize.value, 10) || 20;
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    currentPhotoPage = Math.min(Math.max(currentPhotoPage, 1), totalPages);
+    const pageItems = filtered.slice((currentPhotoPage - 1) * pageSize, currentPhotoPage * pageSize);
+    photoResultSummary.textContent = query || filterAlbum.value
+      ? `找到 ${filtered.length} 张，全部共 ${photos.length} 张`
+      : `共 ${photos.length} 张照片`;
+    renderPhotoPagination(filtered.length, totalPages, pageSize);
+    if (!filtered.length) {
+      const filteredEmpty = photos.length > 0 && (query || filterAlbum.value);
+      tableBody.innerHTML = `<tr class="empty-row"><td colspan="10"><div class="table-state"><span class="table-state-icon">${filteredEmpty ? '⌕' : '▧'}</span><strong>${filteredEmpty ? '没有匹配的照片' : '还没有照片'}</strong><span>${filteredEmpty ? '试试更换关键词或相册筛选条件' : '上传第一张照片后会显示在这里'}</span></div></td></tr>`;
+      refreshBatchState();
+      return;
+    }
+    tableBody.innerHTML = pageItems
+      .map((p) => {
+        const dims = p.width && p.height ? `${p.width}×${p.height}` : '—';
+        return `
+      <tr>
+        <td><input type="checkbox" class="row-select row-check" data-id="${p.id}" /></td>
+        <td><div class="thumb-box" data-preview="${esc(p.image)}"><img src="${esc(p.thumbnail || p.image)}" alt="${esc(p.title || 'Gallery image')}" loading="lazy" decoding="async" /></div></td>
+        <td><div class="cell-title">${esc(p.title || '（无标题）')}</div>${p.description ? `<div class="cell-desc">${esc(p.description)}</div>` : ''}</td>
+        <td><select class="album-select" data-move="${p.id}">
+          <option value="" ${!p.albumId ? 'selected' : ''}>未分组</option>
+          ${albums.map((a) => `<option value="${a.id}" ${p.albumId === a.id ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}
+        </select></td>
+        <td>${dims}</td>
+        <td>${formatSize(p.fileSize)}</td>
+        <td><span class="badge ${p.watermarked ? 'badge-wm' : 'badge-off'}">${p.watermarked ? '有' : '无'}</span></td>
+        <td class="cell-time">${p.createdAt ? esc(formatUtcToLocal(p.createdAt)) : '—'}<br />${p.updatedAt && p.updatedAt !== p.createdAt ? esc(formatUtcToLocal(p.updatedAt)) : ''}</td>
+        <td><span class="badge ${p.published ? 'badge-on' : 'badge-off'}">${p.published ? '已发布' : '隐藏'}</span></td>
+        <td class="action-cell"><div class="row-actions">
+          <button class="btn-icon" data-edit="${p.id}">编辑</button>
+          <details class="action-menu">
+            <summary class="btn-icon ghost" aria-label="更多操作" title="更多操作">•••</summary>
+            <div class="action-menu-popover">
+              <button class="action-menu-item" data-copy="${esc(p.image)}">复制图片链接</button>
+              <button class="action-menu-item ${p.watermarked ? 'warning' : ''}" data-wm="${p.id}">${p.watermarked ? '移除水印' : '添加水印'}</button>
+              <button class="action-menu-item ${p.published ? 'warning' : 'success'}" data-toggle="${p.id}">${p.published ? '隐藏照片' : '发布照片'}</button>
+              <button class="action-menu-item danger" data-del="${p.id}">删除照片</button>
+            </div>
+          </details>
+        </div></td>
+      </tr>`;
+      })
+      .join('');
+    bindRowEvents();
+    refreshBatchState();
+  }
+
+  photoSearch.addEventListener('input', () => { currentPhotoPage = 1; renderPhotos(); });
+  filterAlbum.addEventListener('change', () => { currentPhotoPage = 1; renderPhotos(); });
+  photoPageSize.addEventListener('change', () => { currentPhotoPage = 1; renderPhotos(); });
+  photoPrevPage.addEventListener('click', () => { if (currentPhotoPage > 1) { currentPhotoPage -= 1; renderPhotos(); } });
+  photoNextPage.addEventListener('click', () => {
+    if (!photoNextPage.disabled) { currentPhotoPage += 1; renderPhotos(); }
+  });
+
+  /** 绑定行内事件（每次渲染后调用） */
+  function bindRowEvents(): void {
+    tableBody.querySelectorAll<HTMLSelectElement>('[data-move]').forEach((sel) => {
+      sel.addEventListener('change', async () => {
+        // 服务层返回的 id 为字符串，直接用 dataset（字符串）拼 URL；albumId 后端要求数字或 null
+        const id = sel.dataset.move!;
+        const albumId = sel.value ? parseInt(sel.value, 10) : null;
+        const res = await fetch(`/api/admin/gallery/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ albumId }),
+        });
+        if (res.ok) { showToast('相册已更新'); loadList(); loadAlbums(); }
+        else showToast((await res.json()).error || '更新失败');
+      });
+    });
+    tableBody.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
+      btn.addEventListener('click', () => void copyImageUrl(btn.dataset.copy!));
+    });
+    tableBody.querySelectorAll<HTMLButtonElement>('[data-edit]').forEach((btn) => {
+      btn.addEventListener('click', () => openPhotoModal(btn.dataset.edit!));
+    });
+    tableBody.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        // 关键修复：p.id 是字符串，dataset 也是字符串，禁止 parseInt 后用 === 比较（恒 false 导致静默失败）
+        const p = photos.find((x) => String(x.id) === btn.dataset.toggle);
+        if (!p) { showToast('未找到照片记录，请刷新列表'); return; }
+        const res = await fetch(`/api/admin/gallery/${p.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ published: !p.published }),
+        });
+        if (res.ok) { showToast(p.published ? '已隐藏' : '已发布'); loadList(); }
+        else showToast((await res.json()).error || '操作失败');
+      });
+    });
+    // 单张水印开关
+    tableBody.querySelectorAll<HTMLButtonElement>('[data-wm]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const p = photos.find((x) => String(x.id) === btn.dataset.wm);
+        if (!p) { showToast('未找到照片记录，请刷新列表'); return; }
+        const res = await fetch(`/api/admin/gallery/${p.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ watermarked: !p.watermarked }),
+        });
+        if (res.ok) { showToast(p.watermarked ? '已去除水印' : '已添加水印'); loadList(); }
+        else showToast((await res.json()).error || '操作失败');
+      });
+    });
+    tableBody.querySelectorAll<HTMLButtonElement>('[data-del]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('确定删除此照片？本地上传的图片文件也会被删除。')) return;
+        const res = await fetch(`/api/admin/gallery/${btn.dataset.del}`, { method: 'DELETE' });
+        if (res.ok) { showToast('已删除'); loadList(); loadAlbums(); }
+        else showToast((await res.json()).error || '删除失败');
+      });
+    });
+    tableBody.querySelectorAll<HTMLElement>('[data-preview]').forEach((el) => {
+      el.addEventListener('click', () => openPreview(el.dataset.preview!));
+    });
+  }
+
+  /* ========== 复制图片直链 ========== */
+  /**
+   * 将图片 URL 复制到剪贴板（优先 Clipboard API，非安全上下文回退 textarea 方案）
+   * @param src 图片地址（/uploads/... 相对路径时自动补全为绝对 URL）
+   */
+  async function copyImageUrl(src: string): Promise<void> {
+    // 相对路径补全为绝对地址，便于在其他站点直接访问
+    const url = src.startsWith('http') ? src : `${location.origin}${src}`;
+    let ok = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        ok = true;
+      }
+    } catch {
+      ok = false;
+    }
+    // 非安全上下文或旧浏览器无法使用 Clipboard API 时，显示可选中的
+    // 原始地址供手动复制，避免继续依赖已废弃的 document.execCommand。
+    if (!ok) {
+      window.prompt('自动复制不可用，请手动复制图片链接：', url);
+      return;
+    }
+    showToast('图片链接已复制');
+  }
+
+  /* ========== 照片编辑弹窗（标题 / 描述） ========== */
+  const photoModal = document.getElementById('photoModal') as HTMLElement;
+  /** 当前正在编辑的照片 ID（字符串） */
+  let editingPhotoId: string | null = null;
+
+  /**
+   * 打开照片编辑弹窗并回填数据
+   * @param id 照片 ID（字符串，来自 data 属性）
+   */
+  function openPhotoModal(id: string): void {
+    const p = photos.find((x) => String(x.id) === id);
+    if (!p) { showToast('未找到照片记录，请刷新列表'); return; }
+    editingPhotoId = id;
+    (document.getElementById('p_title') as HTMLInputElement).value = p.title ?? '';
+    (document.getElementById('p_description') as HTMLTextAreaElement).value = p.description ?? '';
+    // 缩略预览（与列表一致的缩略图，避免弹窗内加载原图）
+    document.getElementById('photoModalPreview')!.innerHTML =
+      `<img src="${esc(p.thumbnail || p.image)}" alt="编辑照片预览" loading="lazy" decoding="async" />`;
+    // 复位错误提示
+    (document.getElementById('p_titleErr') as HTMLElement).textContent = '';
+    (document.getElementById('p_descErr') as HTMLElement).textContent = '';
+    photoModal.classList.add('show');
+    (document.getElementById('p_title') as HTMLInputElement).focus();
+  }
+
+  /** 关闭照片编辑弹窗 */
+  function closePhotoModal(): void {
+    photoModal.classList.remove('show');
+    editingPhotoId = null;
+  }
+
+  document.getElementById('btnPhotoCancel')!.addEventListener('click', closePhotoModal);
+  photoModal.addEventListener('click', (e) => { if (e.target === photoModal) closePhotoModal(); });
+
+  /** 保存照片编辑（含前端校验与错误处理） */
+  document.getElementById('btnPhotoSave')!.addEventListener('click', async () => {
+    if (!editingPhotoId) return;
+    const titleEl = document.getElementById('p_title') as HTMLInputElement;
+    const descEl = document.getElementById('p_description') as HTMLTextAreaElement;
+    const titleErr = document.getElementById('p_titleErr') as HTMLElement;
+    const descErr = document.getElementById('p_descErr') as HTMLElement;
+    titleErr.textContent = '';
+    descErr.textContent = '';
+
+    const title = titleEl.value.trim();
+    const description = descEl.value.trim();
+    // 校验：标题 ≤200、描述 ≤1000（与后端 Zod 限制一致）
+    let invalid = false;
+    if (title.length > 200) { titleErr.textContent = '标题不能超过 200 字'; invalid = true; }
+    if (description.length > 1000) { descErr.textContent = '描述不能超过 1000 字'; invalid = true; }
+    if (invalid) return;
+
+    const btn = document.getElementById('btnPhotoSave') as HTMLButtonElement;
+    btn.disabled = true;
+    try {
+      const res = await fetch(`/api/admin/gallery/${editingPhotoId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        // 留空字段传 null 以清空（后端 nullable 校验）
+        body: JSON.stringify({ title: title || null, description: description || null }),
+      });
+      if (res.ok) {
+        showToast('已保存');
+        closePhotoModal();
+        loadList();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        descErr.textContent = data.error || `保存失败（HTTP ${res.status}）`;
+      }
+    } catch {
+      descErr.textContent = '网络错误，请稍后重试';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  /* ========== 缩略图点击预览（原始比例 contain） ========== */
+  const preview = document.getElementById('preview') as HTMLElement;
+  const previewImage = document.getElementById('previewImage') as HTMLImageElement;
+
+  function openPreview(src: string): void {
+    previewImage.src = src;
+    preview.hidden = false;
+  }
+  function closePreview(): void {
+    preview.hidden = true;
+    previewImage.src = '';
+  }
+  preview.querySelector('.preview-close')!.addEventListener('click', closePreview);
+  preview.addEventListener('click', (e) => { if ((e.target as HTMLElement).dataset.previewClose !== undefined) closePreview(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !preview.hidden) closePreview(); });
+
+  /* ========== 批量操作 ========== */
+  const checkAll = document.getElementById('checkAll') as HTMLInputElement;
+  const selCount = document.getElementById('selCount')!;
+
+  /** 刷新批量按钮与计数状态 */
+  function refreshBatchState(): void {
+    const checked = tableBody.querySelectorAll<HTMLInputElement>('.row-select:checked');
+    const boxes = tableBody.querySelectorAll<HTMLInputElement>('.row-select');
+    selCount.textContent = String(checked.length);
+    const disabled = checked.length === 0;
+    for (const id of ['btnBatchPublish', 'btnBatchHide', 'btnBatchWmOn', 'btnBatchWmOff', 'btnBatchMove', 'btnBatchDel']) {
+      (document.getElementById(id) as HTMLButtonElement).disabled = disabled;
+    }
+    checkAll.checked = boxes.length > 0 && checked.length === boxes.length;
+  }
+
+  checkAll.addEventListener('change', () => {
+    tableBody.querySelectorAll<HTMLInputElement>('.row-select').forEach((box) => { box.checked = checkAll.checked; });
+    refreshBatchState();
+  });
+  tableBody.addEventListener('change', (e) => {
+    if ((e.target as HTMLElement).classList.contains('row-select')) refreshBatchState();
+  });
+
+  /** 取当前选中 ID 数组 */
+  function selectedIds(): number[] {
+    return Array.from(tableBody.querySelectorAll<HTMLInputElement>('.row-select:checked'))
+      .map((b) => parseInt(b.dataset.id!, 10))
+      .filter((n) => Number.isInteger(n));
+  }
+
+  /** 批量发布 / 隐藏 */
+  async function batchPublish(publish: boolean): Promise<void> {
+    const ids = selectedIds();
+    if (!ids.length) return;
+    const res = await fetch('/api/admin/gallery/batch-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, action: publish ? 'publish' : 'hide' }),
+    });
+    if (res.ok) { showToast(`已${publish ? '发布' : '隐藏'} ${(await res.json()).updated} 项`); loadList(); }
+    else showToast((await res.json()).error || '批量操作失败');
+  }
+  document.getElementById('btnBatchPublish')!.addEventListener('click', () => batchPublish(true));
+  document.getElementById('btnBatchHide')!.addEventListener('click', () => batchPublish(false));
+
+  /** 批量水印开关（on = 加水印 / off = 去水印） */
+  async function batchWatermark(on: boolean): Promise<void> {
+    const ids = selectedIds();
+    if (!ids.length) return;
+    const res = await fetch('/api/admin/gallery/batch-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, action: on ? 'watermark_on' : 'watermark_off' }),
+    });
+    if (res.ok) { showToast(`已${on ? '添加' : '去除'}水印 ${(await res.json()).updated} 项`); loadList(); }
+    else showToast((await res.json()).error || '批量操作失败');
+  }
+  document.getElementById('btnBatchWmOn')!.addEventListener('click', () => batchWatermark(true));
+  document.getElementById('btnBatchWmOff')!.addEventListener('click', () => batchWatermark(false));
+
+  /** 批量移动相册 */
+  document.getElementById('btnBatchMove')!.addEventListener('click', async () => {
+    const ids = selectedIds();
+    const albumId = (document.getElementById('batchAlbum') as HTMLSelectElement).value;
+    if (!ids.length || !albumId) { showToast('请选择目标相册'); return; }
+    const res = await fetch('/api/admin/gallery/batch-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, albumId: parseInt(albumId, 10) }),
+    });
+    if (res.ok) { showToast(`已移动 ${(await res.json()).updated} 项`); loadList(); loadAlbums(); }
+    else showToast((await res.json()).error || '批量移动失败');
+  });
+
+  /** 批量删除（二次确认） */
+  document.getElementById('btnBatchDel')!.addEventListener('click', async () => {
+    const ids = selectedIds();
+    if (!ids.length) return;
+    if (!confirm(`确定删除选中的 ${ids.length} 张照片？\n本地上传的文件也会被删除，此操作不可恢复。`)) return;
+    const res = await fetch('/api/admin/gallery/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (res.ok) {
+      showToast(`已删除 ${(await res.json()).deleted} 项`);
+      checkAll.checked = false;
+      loadList(); loadAlbums();
+    } else showToast((await res.json()).error || '批量删除失败');
+  });
+
+  /* ========== Metadata 公开配置 ========== */
+  /** 配置项定义（key / 显示名 / 是否敏感标记） */
+  const META_FIELDS: { key: string; label: string; sensitive?: boolean }[] = [
+    { key: 'camera', label: 'Camera' },
+    { key: 'lens', label: 'Lens' },
+    { key: 'focalLength', label: 'Focal Length' },
+    { key: 'aperture', label: 'Aperture' },
+    { key: 'shutterSpeed', label: 'Shutter' },
+    { key: 'iso', label: 'ISO' },
+    { key: 'takenAt', label: 'Date' },
+    { key: 'dimensions', label: 'Dimensions' },
+    { key: 'fileSize', label: 'File Size' },
+    { key: 'location', label: 'GPS Location', sensitive: true },
+  ];
+  const metaGrid = document.getElementById('metaGrid')!;
+
+  /** 加载并渲染 metadata 公开配置 */
+  async function loadMetaConfig(): Promise<void> {
+    const res = await fetch('/api/admin/settings');
+    const settings = res.ok ? await res.json() : {};
+    let config: Record<string, boolean> = {};
+    try { config = JSON.parse(settings.gallery_metadata_public ?? '{}'); } catch { /* 回退默认 */ }
+    metaGrid.innerHTML = META_FIELDS.map(
+      (f) => `
+      <label class="meta-item">
+        <input type="checkbox" data-meta="${f.key}" ${config[f.key] !== false ? 'checked' : ''} />
+        <span>${f.label}</span>${f.sensitive ? '<span class="sensitive">敏感</span>' : ''}
+      </label>`
+    ).join('');
+  }
+
+  document.getElementById('btnSaveMeta')!.addEventListener('click', async () => {
+    const config: Record<string, boolean> = {};
+    metaGrid.querySelectorAll<HTMLInputElement>('[data-meta]').forEach((box) => { config[box.dataset.meta!] = box.checked; });
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gallery_metadata_public: JSON.stringify(config) }),
+    });
+    if (res.ok) showToast('配置已保存，前台立即生效');
+    else showToast((await res.json()).error || '保存失败');
+  });
+
+  /* ========== 水印设置 ========== */
+  /** 水印配置本地状态（与后端 WatermarkConfig 结构一致） */
+  interface WmConfig {
+    image: string;
+    position: string;
+    opacity: number;
+    scale: number;
+    margin: number;
+    posX: number;
+    posY: number;
+  }
+  /** 当前水印配置（页面加载时从后端拉取） */
+  let wmConfig: WmConfig = { image: '', position: 'bottom-right', opacity: 70, scale: 18, margin: 4, posX: 100, posY: 100 };
+
+  /** 预设位置定义：九宫格五个有效位 + 对应百分比坐标（与服务端 WATERMARK_PRESET_POS 一致） */
+  const WM_POSITIONS: { pos: string; label: string; cell: number; posX: number; posY: number }[] = [
+    { pos: 'top-left', label: '左上', cell: 0, posX: 0, posY: 0 },
+    { pos: 'top-right', label: '右上', cell: 2, posX: 100, posY: 0 },
+    { pos: 'center', label: '居中', cell: 4, posX: 50, posY: 50 },
+    { pos: 'bottom-left', label: '左下', cell: 6, posX: 0, posY: 100 },
+    { pos: 'bottom-right', label: '右下', cell: 8, posX: 100, posY: 100 },
+  ];
+
+  /** 渲染位置九宫格选择器（旧版 custom 配置不高亮任何预设，下方提示改选预设位） */
+  function renderWmPosGrid(): void {
+    const grid = document.getElementById('wmPosGrid')!;
+    const cells: string[] = new Array(9).fill('');
+    for (const p of WM_POSITIONS) {
+      cells[p.cell] = `<button type="button" data-pos="${p.pos}" class="${wmConfig.position === p.pos ? 'active' : ''}">${p.label}</button>`;
+    }
+    grid.innerHTML = cells.map((c) => c || '<button type="button" disabled></button>').join('');
+    grid.querySelectorAll<HTMLButtonElement>('[data-pos]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const preset = WM_POSITIONS.find((p) => p.pos === btn.dataset.pos)!;
+        wmConfig.position = preset.pos;
+        wmConfig.posX = preset.posX;
+        wmConfig.posY = preset.posY;
+        renderWmPosGrid();
+        renderWmStage();
+      });
+    });
+    // 提示文案：旧版 custom 自定义坐标来自已移除的拖拽功能，提示用户改选预设位
+    const hint = document.getElementById('wmPosHint')!;
+    hint.textContent = wmConfig.position === 'custom'
+      ? '当前为旧版自定义位置，点选上方预设位即可切换'
+      : '';
+  }
+
+  /**
+   * 渲染静态预览台中的水印位置与大小（仅展示，不可交互）
+   * 映射公式与服务端合成完全一致：
+   *  - 水印宽 = 预览台宽 × scale%
+   *  - 边距 = 预览台短边 × margin%
+   *  - left = margin + posX% × (宽 - 水印宽 - 2×margin)（预设位等价换算）
+   */
+  function renderWmStage(): void {
+    const stage = document.getElementById('wmStage')!;
+    const mark = document.getElementById('wmStageMark') as HTMLImageElement;
+    const empty = document.getElementById('wmStageEmpty') as HTMLElement;
+    if (!wmConfig.image) {
+      mark.style.display = 'none';
+      empty.style.display = 'flex';
+      return;
+    }
+    empty.style.display = 'none';
+    mark.src = wmConfig.image;
+    mark.style.display = 'block';
+    mark.style.opacity = String(wmConfig.opacity / 100);
+    const stageW = stage.clientWidth;
+    const stageH = stage.clientHeight;
+    const wmW = Math.max(1, stageW * (wmConfig.scale / 100));
+    // 水印图宽高比未知时按正方形近似（仅预览用途，实际合成按真实比例）
+    mark.style.width = `${wmW}px`;
+    mark.style.height = 'auto';
+    const marginPx = Math.min(stageW, stageH) * (wmConfig.margin / 100);
+    // 预设位先换算成百分比坐标，统一走同一套定位公式
+    const preset = WM_POSITIONS.find((p) => p.pos === wmConfig.position);
+    const px = preset ? preset.posX : wmConfig.posX;
+    const py = preset ? preset.posY : wmConfig.posY;
+    // 高度未知（img 尚未加载）时按宽度近似，加载完成后用真实高度重算
+    const wmH = mark.naturalHeight ? wmW * (mark.naturalHeight / mark.naturalWidth) : wmW;
+    const maxLeft = Math.max(0, stageW - wmW - marginPx * 2);
+    const maxTop = Math.max(0, stageH - wmH - marginPx * 2);
+    mark.style.left = `${marginPx + maxLeft * (px / 100)}px`;
+    mark.style.top = `${marginPx + maxTop * (py / 100)}px`;
+  }
+
+  /** 同步水印预览区显示（有图显示缩略，无图显示占位文案） */
+  function renderWmPreview(): void {
+    const preview = document.getElementById('wmPreview')!;
+    const removeBtn = document.getElementById('btnWmRemove') as HTMLButtonElement;
+    if (wmConfig.image) {
+      preview.innerHTML = `<img src="${esc(wmConfig.image)}" alt="水印图预览" />`;
+      removeBtn.hidden = false;
+    } else {
+      preview.innerHTML = '<span class="wm-empty">未上传水印图</span>';
+      removeBtn.hidden = true;
+    }
+  }
+
+  /** 同步三个滑杆的数值标签显示 */
+  function renderWmSliders(): void {
+    (document.getElementById('wmOpacity') as HTMLInputElement).value = String(wmConfig.opacity);
+    (document.getElementById('wmScale') as HTMLInputElement).value = String(wmConfig.scale);
+    (document.getElementById('wmMargin') as HTMLInputElement).value = String(wmConfig.margin);
+    document.getElementById('wmOpacityVal')!.textContent = `${wmConfig.opacity}%`;
+    document.getElementById('wmScaleVal')!.textContent = `${wmConfig.scale}%`;
+    document.getElementById('wmMarginVal')!.textContent = `${wmConfig.margin}%`;
+  }
+
+  /** 从后端加载水印配置并渲染面板 */
+  async function loadWmConfig(): Promise<void> {
+    const res = await fetch('/api/admin/watermark');
+    if (res.ok) wmConfig = await res.json();
+    renderWmPosGrid();
+    renderWmPreview();
+    renderWmSliders();
+    renderWmStage();
+  }
+
+  // 滑杆拖动实时更新本地状态、标签与预览台
+  for (const [id, key] of [['wmOpacity', 'opacity'], ['wmScale', 'scale'], ['wmMargin', 'margin']] as const) {
+    (document.getElementById(id) as HTMLInputElement).addEventListener('input', (e) => {
+      wmConfig[key] = parseInt((e.target as HTMLInputElement).value, 10);
+      renderWmSliders();
+      renderWmStage();
+    });
+  }
+
+  // 上传水印图
+  const wmFile = document.getElementById('wmFile') as HTMLInputElement;
+  document.getElementById('btnWmUpload')!.addEventListener('click', () => wmFile.click());
+  wmFile.addEventListener('change', async () => {
+    const file = wmFile.files?.[0];
+    wmFile.value = '';
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      showToast('仅支持 jpeg / png / webp（推荐透明背景 PNG）');
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) { showToast('水印图过大，最大 2MB'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/admin/watermark', { method: 'POST', body: fd });
+    if (res.ok) {
+      const data = await res.json();
+      wmConfig.image = data.image;
+      renderWmPreview();
+      renderWmStage();
+      showToast('水印图已上传，记得点「保存配置」');
+    } else {
+      showToast((await res.json()).error || '上传失败');
+    }
+  });
+
+  // 移除水印图（仅清空本地状态，保存后生效）
+  document.getElementById('btnWmRemove')!.addEventListener('click', () => {
+    wmConfig.image = '';
+    renderWmPreview();
+    renderWmStage();
+  });
+
+  // 保存水印配置
+  document.getElementById('btnSaveWm')!.addEventListener('click', async () => {
+    const res = await fetch('/api/admin/watermark', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(wmConfig),
+    });
+    if (res.ok) {
+      wmConfig = await res.json();
+      renderWmPosGrid();
+      renderWmSliders();
+      renderWmStage();
+      showToast('水印配置已保存，已开启水印的照片立即生效');
+    } else {
+      showToast((await res.json()).error || '保存失败');
+    }
+  });
+
+  // 水印图加载完成后按真实宽高比重算预览位置（首次渲染时高度未知）
+  document.getElementById('wmStageMark')!.addEventListener('load', renderWmStage);
+
+  /* ========== 初始化 ========== */
+  loadAlbums().then(loadList);
+  loadMetaConfig();
+  loadWmConfig();
+</script>

@@ -1,0 +1,229 @@
+---
+import type { BlogFeedResult } from '../../types/blog';
+import { formatDateShort } from '../../lib/datetime';
+
+interface Props {
+  feed: BlogFeedResult;
+  compact?: boolean;
+  defaultCover: string;
+}
+
+const { feed, compact = false, defaultCover } = Astro.props;
+---
+
+{
+  feed.error && (
+    <div class:list={['blog-notice', { stale: feed.stale }]} role="status">
+      <span aria-hidden="true">{feed.stale ? '◷' : '!'}</span>
+      <span>{feed.error}</span>
+    </div>
+  )
+}
+
+{
+  feed.articles.length === 0 ? (
+    <div class="blog-empty">
+      <span class="blog-empty-mark" aria-hidden="true">—</span>
+      <p>暂时没有可以展示的文章。</p>
+      <a href="https://blog.luen0511.com" target="_blank" rel="noopener noreferrer">前往原博客</a>
+    </div>
+  ) : (
+    <div class:list={['blog-grid', { compact }]}>
+      {feed.articles.map((article) => (
+        <article class="blog-card">
+          <a class="blog-cover" href={`/blog/${encodeURIComponent(article.slug)}`} aria-label={`阅读 ${article.title}`}>
+            <>
+                <img
+                  src={article.cover || article.sourceCover || defaultCover}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  referrerpolicy="no-referrer"
+                  data-blog-image
+                />
+                <span class="image-fallback" hidden>图片暂时无法显示</span>
+              </>
+          </a>
+          <div class="blog-card-body">
+            <div class="blog-meta">
+              {article.publishedAt && <time datetime={article.publishedAt}>{formatDateShort(article.publishedAt)}</time>}
+              <span class="blog-source">来源：{article.sourceName}</span>
+              {(article.categories.length > 0 ? article.categories.slice(0, 2) : ['文章'])
+                .map((category) => <span class="blog-tag">{category}</span>)}
+            </div>
+            <h3><a href={`/blog/${encodeURIComponent(article.slug)}`}>{article.title}</a></h3>
+            <p>{article.excerpt}</p>
+            <a class="read-link" href={`/blog/${encodeURIComponent(article.slug)}`}>
+              阅读文章 <span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+<script>
+  function activateImageFallback(image: HTMLImageElement) {
+    image.hidden = true;
+    const fallback = image.parentElement?.querySelector<HTMLElement>('.image-fallback');
+    if (fallback) fallback.hidden = false;
+  }
+
+  document.querySelectorAll<HTMLImageElement>('[data-blog-image]').forEach((image) => {
+    image.addEventListener('error', () => activateImageFallback(image), { once: true });
+    if (image.complete && image.naturalWidth === 0) activateImageFallback(image);
+  });
+</script>
+
+<style>
+  .blog-notice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, var(--color-border));
+    border-radius: var(--radius-card);
+    color: var(--color-muted);
+    font-size: 0.875rem;
+    background: color-mix(in srgb, var(--color-card) 82%, transparent);
+  }
+
+  .blog-notice > span:first-child {
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-weight: 700;
+  }
+
+  .blog-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 28px var(--grid-gap);
+  }
+
+  .blog-card {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--color-card) 90%, transparent);
+    box-shadow: var(--shadow-card);
+    transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .blog-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--color-border-strong);
+  }
+
+  .blog-cover {
+    position: relative;
+    display: grid;
+    min-height: 150px;
+    max-height: 320px;
+    place-items: center;
+    overflow: hidden;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-muted) 7%, var(--color-background));
+  }
+
+  .blog-cover img {
+    width: 100%;
+    height: auto;
+    max-height: 320px;
+    object-fit: contain;
+  }
+
+  .image-fallback {
+    display: grid;
+    width: 100%;
+    min-height: 150px;
+    place-items: center;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.16em;
+  }
+
+  .image-fallback[hidden] { display: none; }
+
+  .blog-card-body { padding: 20px 22px 22px; }
+
+  .blog-meta {
+    display: flex;
+    min-height: 22px;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .blog-tag {
+    padding: 2px 7px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    text-transform: none;
+  }
+  .blog-source { color: var(--color-foreground); text-transform: none; }
+
+  h3 {
+    font-size: clamp(1.2rem, 2.4vw, 1.5rem);
+    line-height: 1.24;
+    letter-spacing: -0.025em;
+  }
+
+  h3 a { transition: color var(--transition-fast); }
+  h3 a:hover { color: var(--color-accent); }
+
+  .blog-card-body > p {
+    display: -webkit-box;
+    overflow: hidden;
+    margin-top: 11px;
+    color: var(--color-muted);
+    font-size: 0.9rem;
+    line-height: 1.7;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .read-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 17px;
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+  }
+
+  .read-link span { transition: transform var(--transition-fast); }
+  .read-link:hover span { transform: translateX(3px); }
+
+  .blog-empty {
+    display: flex;
+    min-height: 190px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border-block: 1px solid var(--color-border);
+    color: var(--color-muted);
+    text-align: center;
+  }
+
+  .blog-empty-mark { color: var(--color-accent); font-family: var(--font-mono); }
+  .blog-empty a { color: var(--color-foreground); font-size: 0.8125rem; }
+
+  @media (max-width: 700px) {
+    .blog-grid { grid-template-columns: 1fr; gap: 18px; }
+    .blog-card-body { padding: 18px; }
+    .blog-cover, .image-fallback { min-height: 130px; }
+  }
+</style>

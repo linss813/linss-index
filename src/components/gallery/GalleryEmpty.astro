@@ -1,0 +1,20 @@
+---
+/**
+ * 相册空状态
+ * 后台没有任何公开照片时展示，保持 Editorial 结构与留白，不显示报错
+ */
+---
+
+<div class="gallery-empty">
+  <p>Nothing here yet.</p>
+</div>
+
+<style>
+  .gallery-empty {
+    padding: calc(var(--space-section) * 0.4) 0;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    letter-spacing: 0.05em;
+  }
+</style>

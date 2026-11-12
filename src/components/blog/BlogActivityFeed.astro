@@ -1,0 +1,98 @@
+---
+import type { BlogArticle } from '../../types/blog';
+import { formatDateShort } from '../../lib/datetime';
+
+interface Props { articles: BlogArticle[]; defaultCover: string; failedSources?: string[]; }
+const { articles, defaultCover, failedSources = [] } = Astro.props;
+---
+
+{failedSources.length > 0 && (
+  <p class="feed-notice" role="status">{failedSources.join('、')} 暂时未能更新，其他订阅源不受影响。</p>
+)}
+
+{articles.length === 0 ? (
+  <div class="activity-empty"><span>—</span><p>这个分类暂时没有动态。</p></div>
+) : (
+  <div class="activity-list">
+    {articles.map((article) => (
+      <article class="activity-card">
+        <div class="source-line">
+          <span class="source-icon">
+            {article.sourceIcon
+              ? <img src={article.sourceIcon} alt="" loading="lazy" data-source-icon />
+              : <span>{article.sourceName.slice(0, 1).toUpperCase()}</span>}
+          </span>
+          <div><strong>{article.sourceName}</strong><span>{article.sourceCategoryName ?? '动态'}</span></div>
+          {article.publishedAt && <time datetime={article.publishedAt}>{formatDateShort(article.publishedAt)}</time>}
+        </div>
+        <div class="activity-content">
+          <div class="activity-copy">
+            <p class="share-label">分享了一篇新文章</p>
+            <h3><a href={article.url} target="_blank" rel="noopener noreferrer">{article.title}</a></h3>
+            {article.excerpt && <p class="activity-excerpt">{article.excerpt}</p>}
+            <div class="activity-tags">
+              {article.categories.slice(0, 3).map((category) => <span>{category}</span>)}
+            </div>
+            <a class="original-link" href={article.url} target="_blank" rel="noopener noreferrer">查看原文 <span aria-hidden="true">↗</span></a>
+          </div>
+          <a class="activity-cover" href={article.url} target="_blank" rel="noopener noreferrer" tabindex="-1">
+            <img src={article.cover || article.sourceCover || defaultCover} alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" data-activity-image />
+            <span hidden>图片暂时无法显示</span>
+          </a>
+        </div>
+      </article>
+    ))}
+  </div>
+)}
+
+<script>
+  document.querySelectorAll<HTMLImageElement>('[data-activity-image]').forEach((image) => {
+    image.addEventListener('error', () => {
+      image.hidden = true;
+      const fallback = image.nextElementSibling as HTMLElement | null;
+      if (fallback) fallback.hidden = false;
+    }, { once: true });
+  });
+  document.querySelectorAll<HTMLImageElement>('[data-source-icon]').forEach((image) => {
+    image.addEventListener('error', () => { image.parentElement!.textContent = '•'; }, { once: true });
+  });
+</script>
+
+<style>
+  .feed-notice { margin-bottom: 16px; color: var(--color-muted); font-size: .82rem; }
+  .activity-list { display: grid; gap: 16px; }
+  .activity-card {
+    padding: clamp(18px, 3vw, 26px); border: 1px solid var(--color-border);
+    border-radius: var(--radius-card); background: color-mix(in srgb, var(--color-card) 90%, transparent);
+    box-shadow: var(--shadow-card); transition: border-color var(--transition-fast), transform var(--transition-fast);
+  }
+  .activity-card:hover { border-color: var(--color-border-strong); transform: translateY(-2px); }
+  .source-line { display: flex; align-items: center; gap: 10px; color: var(--color-muted); }
+  .source-icon { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-background); color: var(--color-accent); font-family: var(--font-mono); }
+  .source-icon img { width: 100%; height: 100%; object-fit: contain; }
+  .source-line > div { display: grid; line-height: 1.25; }
+  .source-line strong { color: var(--color-foreground); font-size: .84rem; }
+  .source-line div span { margin-top: 3px; font-family: var(--font-mono); font-size: .65rem; }
+  .source-line time { margin-left: auto; font-family: var(--font-mono); font-size: .7rem; }
+  .activity-content { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 22px; margin-top: 18px; }
+  .share-label { margin-bottom: 6px; color: var(--color-muted); font-size: .78rem; }
+  h3 { font-size: clamp(1.15rem, 2.5vw, 1.45rem); letter-spacing: -.025em; line-height: 1.3; }
+  h3 a:hover { color: var(--color-accent); }
+  .activity-excerpt { display: -webkit-box; margin-top: 10px; overflow: hidden; color: var(--color-muted); font-size: .86rem; line-height: 1.65; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .activity-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .activity-tags span { padding: 2px 7px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-muted); font-size: .66rem; }
+  .original-link { display: inline-flex; gap: 6px; margin-top: 15px; color: var(--color-accent); font-family: var(--font-mono); font-size: .72rem; }
+  .activity-cover { display: grid; min-height: 105px; place-items: center; align-self: stretch; overflow: hidden; border-radius: calc(var(--radius-card) * .75); background: color-mix(in srgb, var(--color-muted) 7%, var(--color-background)); }
+  .activity-cover img { width: 100%; height: 100%; max-height: 150px; object-fit: contain; }
+  .activity-cover span { color: var(--color-muted); font-size: .65rem; text-align: center; }
+  .activity-cover span[hidden] { display: none; }
+  .activity-empty { display: grid; min-height: 170px; place-items: center; align-content: center; gap: 6px; border-block: 1px solid var(--color-border); color: var(--color-muted); }
+  .activity-empty span { color: var(--color-accent); }
+  @media (max-width: 600px) {
+    .activity-content { grid-template-columns: 1fr; }
+    .activity-cover { order: -1; max-height: 240px; }
+    .activity-cover img { width: auto; height: auto; max-height: 240px; }
+    .source-line time { font-size: .64rem; }
+  }
+</style>
+

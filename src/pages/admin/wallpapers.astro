@@ -1,0 +1,1292 @@
+---
+/**
+ * 壁纸与背景管理页
+ * 三个功能区：
+ * 1. 背景设置 — 背景类型（纯色 / 图片 / 渐变）、图片来源（上传壁纸或图床随机图 URL）、
+ *    遮罩 Overlay、模糊度、显示位置与尺寸，保存到 settings 表 appearance 键
+ * 2. 壁纸上传 — multipart 上传，仅 jpeg/png/webp/gif，大小受环境变量限制
+ * 3. 壁纸列表 — 缩略图预览、设为背景、启用/禁用、删除
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="壁纸与背景" active="wallpapers">
+  <!-- ==================== 背景设置 ==================== -->
+  <fieldset class="fieldset">
+    <legend>背景设置</legend>
+    <p class="hint">控制前台页面的全局背景。图片类型既支持下方上传的壁纸，也支持填入图床的随机图 API 地址。</p>
+
+    <div class="form-row">
+      <label>背景类型</label>
+      <select id="bg_type">
+        <option value="color">纯色 — 跟随主题或自定义颜色</option>
+        <option value="image">图片 — 上传壁纸或图床图片</option>
+        <option value="gradient">渐变 — CSS 渐变</option>
+      </select>
+    </div>
+
+    <div class="form-row" id="row_bg_value">
+      <label>背景内容 <span class="req">*</span></label>
+      <input type="text" id="bg_value" placeholder="图片 URL / 颜色值 / CSS 渐变" />
+      <p class="field-hint" id="bg_value_hint">
+        支持图床随机图地址，例如 https://www.dmoe.cc/random.php 或 https://api.paugram.com/wallpaper/
+      </p>
+    </div>
+
+    <div class="form-row" id="row_bg_color">
+      <label>背景颜色</label>
+      <div class="inline">
+        <input type="color" id="bg_color_picker" value="#10131a" />
+        <input type="text" id="bg_color" placeholder="#10131a 或 rgba(16,19,26,1)" />
+      </div>
+    </div>
+
+    <div class="form-row" id="row_bg_wallpaper">
+      <label>从已上传壁纸快速选择</label>
+      <select id="bg_wallpaper_select">
+        <option value="">— 不使用已上传壁纸 —</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label>显示位置</label>
+      <input type="text" id="bg_position" list="position_list" value="center" />
+      <datalist id="position_list">
+        <option value="center"></option>
+        <option value="top"></option>
+        <option value="bottom"></option>
+        <option value="left"></option>
+        <option value="right"></option>
+        <option value="top center"></option>
+        <option value="bottom center"></option>
+      </datalist>
+    </div>
+
+    <div class="form-row">
+      <label>显示尺寸</label>
+      <select id="bg_size">
+        <option value="cover">cover — 铺满（裁切）</option>
+        <option value="contain">contain — 完整显示（留边）</option>
+        <option value="repeat">repeat — 平铺</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label>模糊度（0 = 关闭）</label>
+      <div class="inline">
+        <input type="range" id="bg_blur" min="0" max="20" step="1" value="0" />
+        <span class="range-value" id="bg_blur_value">0px</span>
+      </div>
+    </div>
+
+    <div class="form-row-inline">
+      <label class="switch-label">
+        <input type="checkbox" id="overlay_enabled" />
+        启用遮罩 Overlay（提升文字可读性）
+      </label>
+    </div>
+
+    <div class="form-row" id="row_overlay">
+      <div class="inline">
+        <div class="inline-item">
+          <label>遮罩颜色</label>
+          <div class="inline">
+            <input type="color" id="overlay_color_picker" value="#000000" />
+            <input type="text" id="overlay_color" value="#000000" />
+          </div>
+        </div>
+        <div class="inline-item">
+          <label>遮罩强度</label>
+          <div class="inline">
+            <input type="range" id="overlay_opacity" min="0" max="100" step="5" value="35" />
+            <span class="range-value" id="overlay_opacity_value">35%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 背景预设库：仅提供纯色与渐变两类（不含图片） -->
+    <div class="form-row">
+      <label>纯色预设 <span class="preset-note">点击直接应用</span></label>
+      <div class="preset-grid" id="presetColors"></div>
+    </div>
+    <div class="form-row">
+      <label>渐变预设 <span class="preset-note">点击直接应用</span></label>
+      <div class="preset-grid" id="presetGradients"></div>
+    </div>
+
+    <!-- 背景实时预览：模拟前台 fixed 背景层的实际渲染效果 -->
+    <div class="form-row">
+      <label>背景实时预览</label>
+      <div class="bg-preview" id="bgPreview">
+        <div class="bg-preview-layer" id="bgPreviewLayer"></div>
+        <div class="bg-preview-overlay" id="bgPreviewOverlay"></div>
+        <div class="bg-preview-scene" aria-hidden="true">
+          <div class="preview-nav">
+            <span class="preview-brand">站点名称</span>
+            <span class="preview-links">首页 · 服务 · 项目</span>
+          </div>
+          <div class="preview-hero">
+            <p class="preview-title">页面标题示例</p>
+            <p class="preview-sub">这是一段用于观察背景可读性的示例文字</p>
+            <span class="preview-btn">了解更多</span>
+          </div>
+          <div class="preview-cards">
+            <div class="preview-card"></div><div class="preview-card"></div><div class="preview-card"></div>
+          </div>
+        </div>
+      </div>
+      <p class="field-hint">预览框按 16:9 自适应裁剪展示，与前台背景层的渲染方式一致；超大图片会自动缩放裁剪，不会遮挡内容。</p>
+    </div>
+
+    <div class="form-actions">
+      <button type="button" class="btn-primary" id="btnSaveBg">保存背景设置</button>
+      <button type="button" class="btn-secondary" id="btnResetBg">恢复主题默认（跟随主题背景色）</button>
+    </div>
+  </fieldset>
+
+  <!-- ==================== 壁纸上传 ==================== -->
+  <div class="upload-area">
+    <form id="uploadForm" class="upload-form">
+      <label class="file-label" for="fileInput">选择图片</label>
+      <input type="file" id="fileInput" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
+      <span class="file-name" id="fileName">未选择文件</span>
+      <!-- 选中文件后的预览行：缩略图 + 文件信息在左，操作按钮（确认上传）在右 -->
+      <div class="upload-preview" id="uploadPreview" hidden>
+        <img class="upload-thumb" id="uploadThumb" alt="待上传图片预览" />
+        <div class="upload-meta">
+          <span class="upload-name" id="uploadName"></span>
+          <span class="upload-size" id="uploadSize"></span>
+        </div>
+        <div class="upload-actions">
+          <button type="button" class="btn-icon ghost" id="btnCrop" title="裁剪后再上传">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6.13 1L6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13L16 6a2 2 0 0 1 2 2v15"/></svg>
+            裁剪
+          </button>
+          <button type="button" class="btn-icon" id="btnClearFile" title="移除已选文件">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            移除
+          </button>
+          <button type="submit" class="btn-primary" id="btnUpload">确认上传</button>
+        </div>
+      </div>
+    </form>
+    <p class="upload-hint">支持 jpeg / png / webp / gif，单个文件不超过 10MB。可先裁剪再上传；上传后可在下方一键设为背景。</p>
+  </div>
+
+  <!-- ==================== 壁纸列表 ==================== -->
+  <!-- 批量操作条 -->
+  <div class="batch-bar">
+    <label class="batch-all-label">
+      <input type="checkbox" class="row-check" id="checkAll" /> 全选
+    </label>
+    <span class="batch-info">已选 <b id="selCount">0</b> 项</span>
+    <button type="button" class="btn-icon danger" id="btnBatchDel" disabled>批量删除</button>
+  </div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th style="width:70px">排序</th>
+        <th style="width:104px">预览</th>
+        <th>文件名</th>
+        <th>大小</th>
+        <th>状态</th>
+        <th style="width:240px">操作</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+      <tr class="loading-row"><td colspan="7"><div class="table-state"><i class="table-spinner"></i><strong>正在加载壁纸</strong></div></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ==================== 图片裁剪模态框 ==================== -->
+  <div class="modal" id="cropModal">
+    <div class="modal-content">
+      <h2 class="modal-title">裁剪图片</h2>
+      <div class="crop-ratio-bar" id="cropRatioBar">
+        <button type="button" class="ratio-btn active" data-ratio="free">自由</button>
+        <button type="button" class="ratio-btn" data-ratio="1">1:1</button>
+        <button type="button" class="ratio-btn" data-ratio="1.3333">4:3</button>
+        <button type="button" class="ratio-btn" data-ratio="1.7778">16:9</button>
+      </div>
+      <p class="field-hint">拖动选区内部移动位置，拖动边缘或四角调整大小；在空白处拖拽可新建选区。比例锁定时仅支持四角等比调整。</p>
+      <div class="crop-stage">
+        <canvas id="cropCanvas"></canvas>
+      </div>
+      <p class="crop-info" id="cropInfo">未选择区域</p>
+      <div class="form-actions">
+        <button type="button" class="btn-secondary" id="btnCropCancel">取消</button>
+        <button type="button" class="btn-icon" id="btnCropReset">重置选区</button>
+        <button type="button" class="btn-primary" id="btnCropApply">应用裁剪</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 图片预览层（与相册管理一致：contain 大图 + 遮罩/×/ESC 关闭） ==================== -->
+  <div class="preview" id="preview" hidden>
+    <div class="preview-backdrop" data-preview-close></div>
+    <img class="preview-image" id="previewImage" alt="预览" />
+    <button type="button" class="preview-close" aria-label="关闭预览">×</button>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<style>
+  .fieldset {
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    background: var(--admin-bg);
+  }
+  .fieldset legend {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0 8px;
+    color: var(--admin-muted);
+  }
+  .hint, .field-hint {
+    font-size: 0.75rem;
+    color: var(--admin-muted);
+    margin-bottom: 12px;
+  }
+  .field-hint { margin: 6px 0 0; }
+  .form-row { margin-bottom: 14px; }
+  .form-row > label {
+    display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px;
+  }
+  .req { color: #dc2626; }
+  .form-row input[type="text"], .form-row select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border);
+    border-radius: 8px; font-size: 0.875rem; background: var(--admin-bg);
+  }
+  .form-row input:focus, .form-row select:focus { outline: none; border-color: var(--admin-primary); }
+  .inline { display: flex; align-items: center; gap: 10px; }
+  .inline-item { flex: 1; min-width: 0; }
+  .inline input[type="text"], .inline select { flex: 1; }
+  input[type="color"] {
+    width: 42px; height: 34px; padding: 2px; border: 1px solid var(--admin-border);
+    border-radius: 8px; background: var(--admin-bg); cursor: pointer;
+  }
+  input[type="range"] { flex: 1; accent-color: var(--admin-primary); }
+  .range-value { font-size: 0.8125rem; color: var(--admin-muted); min-width: 40px; }
+  .form-row-inline { margin-bottom: 14px; }
+  .switch-label { font-size: 0.8125rem; color: var(--admin-muted); display: flex; align-items: center; gap: 8px; }
+  .switch-label input { accent-color: var(--admin-primary); }
+  .form-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn-primary {
+    padding: 8px 16px; background: var(--admin-primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-secondary {
+    padding: 8px 16px; background: transparent; color: var(--admin-muted);
+    border: 1px solid var(--admin-border); border-radius: 8px; font-size: 0.875rem;
+    cursor: pointer;
+  }
+  .btn-secondary:hover { background: #f0f0f3; }
+  /* ===== 上传预览：缩略图 + 文件信息 + 右侧操作按钮 ===== */
+  .upload-preview { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+  /* display:flex 会覆盖 hidden 属性的默认样式，需显式声明 */
+  .upload-preview[hidden] { display: none; }
+  .upload-thumb {
+    width: 72px; height: 48px; object-fit: cover; border-radius: 8px;
+    border: 1px solid var(--admin-border); background: #f0f0f3; flex-shrink: 0;
+  }
+  .upload-meta { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+  .upload-name { font-size: 0.8125rem; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .upload-size { font-size: 0.75rem; color: var(--admin-muted); }
+  .upload-actions { display: flex; align-items: center; gap: 8px; }
+  /* ===== 背景预设库（纯色 / 渐变） ===== */
+  .preset-note { font-weight: 400; font-size: 0.7rem; margin-left: 6px; color: var(--admin-muted); }
+  .preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+  .preset-swatch {
+    height: 34px; border-radius: 8px; border: 1px solid var(--admin-border);
+    cursor: pointer; transition: all 0.15s; overflow: hidden;
+    font-size: 0.62rem; color: transparent;
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px;
+  }
+  .preset-swatch:hover {
+    transform: translateY(-2px); box-shadow: 0 3px 8px rgba(0,0,0,0.18);
+    border-color: var(--admin-primary); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+  }
+  /* ===== 背景实时预览（模拟前台渲染） ===== */
+  /* 限制最大宽度并采用固定高度，避免宽屏下预览框撑满整行、页面纵向溢出 */
+  .bg-preview {
+    position: relative; width: 100%; max-width: 520px; height: 280px;
+    border-radius: 12px; overflow: hidden; border: 1px solid var(--admin-border);
+    background: #10131a;
+  }
+  @media (max-width: 640px) {
+    .bg-preview { height: 200px; max-width: 100%; }
+    /* 小屏下缩略图收敛为 64×36，减少横向占位 */
+    .thumb { width: 64px; height: 36px; }
+    /* 裁剪弹窗：比例按钮触控热区加大，画布区内边距收窄 */
+    .ratio-btn { padding: 9px 16px; font-size: 0.8125rem; }
+    .crop-stage { padding: 4px; }
+    /* 裁剪弹窗操作按钮在窄屏纵向堆叠，便于触控 */
+    .modal .form-actions { flex-wrap: wrap; }
+  }
+  .bg-preview-layer, .bg-preview-overlay { position: absolute; inset: 0; }
+  .bg-preview-layer { background-position: center; background-size: cover; background-repeat: no-repeat; }
+  .bg-preview-overlay { pointer-events: none; }
+  .bg-preview-scene {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    padding: 14px 18px; gap: 8px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.55);
+    pointer-events: none;
+  }
+  .preview-nav { display: flex; justify-content: space-between; font-size: 0.68rem; opacity: 0.92; }
+  .preview-brand { font-weight: 700; }
+  .preview-hero { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .preview-title { font-size: 1.05rem; font-weight: 700; }
+  .preview-sub { font-size: 0.7rem; opacity: 0.85; }
+  .preview-btn { align-self: flex-start; font-size: 0.65rem; padding: 3px 12px; border: 1px solid rgba(255,255,255,0.7); border-radius: 999px; }
+  .preview-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .preview-card { height: 32px; border-radius: 8px; background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25); }
+  /* ===== 裁剪模态框 ===== */
+  .modal {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    z-index: 200; align-items: center; justify-content: center;
+  }
+  .modal.show { display: flex; }
+  .modal-content {
+    width: 760px; max-width: 92vw; background: var(--admin-bg);
+    border-radius: 12px; padding: 24px; max-height: 92vh; overflow-y: auto;
+  }
+  .modal-title { font-size: 1.05rem; font-weight: 600; margin-bottom: 8px; }
+  /* 裁剪比例锁定按钮组 */
+  .crop-ratio-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+  .ratio-btn {
+    padding: 4px 12px; font-size: 0.75rem; border: 1px solid var(--admin-border);
+    border-radius: 999px; background: var(--admin-bg); color: var(--admin-muted);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .ratio-btn:hover { color: var(--admin-primary); border-color: var(--admin-primary); }
+  .ratio-btn.active { background: var(--admin-primary); color: #fff; border-color: var(--admin-primary); }
+  .crop-stage {
+    display: flex; justify-content: center;
+    background: repeating-conic-gradient(#ececf0 0% 25%, #ffffff 0% 50%) 0 0 / 16px 16px;
+    border-radius: 8px; padding: 8px; margin: 12px 0 8px;
+  }
+  .crop-stage canvas { max-width: 100%; cursor: crosshair; touch-action: none; border-radius: 4px; }
+  .crop-info { font-size: 0.75rem; color: var(--admin-muted); text-align: center; margin-bottom: 14px; }
+  .upload-area {
+    margin-bottom: 16px;
+    background: var(--admin-bg);
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 16px 20px;
+  }
+  .upload-form { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .file-label {
+    display: inline-block; padding: 8px 16px;
+    border: 1px solid var(--admin-border); border-radius: 8px;
+    font-size: 0.875rem; font-weight: 600; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .file-label:hover { background: #f0f0f3; }
+  .file-name {
+    font-size: 0.8125rem; color: var(--admin-muted);
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .upload-hint { margin-top: 10px; font-size: 0.75rem; color: var(--admin-muted); }
+  /* ===== 壁纸列表 ===== */
+  .data-table {
+    width: 100%; border-collapse: collapse; background: var(--admin-bg);
+    border: 1px solid var(--admin-border); border-radius: 12px; overflow: hidden;
+  }
+  .data-table th {
+    text-align: left; padding: 10px 12px; font-size: 0.75rem;
+    letter-spacing: 0.05em; color: var(--admin-muted);
+    background: #f9f9fa; border-bottom: 1px solid var(--admin-border);
+  }
+  .data-table td { padding: 10px 12px; font-size: 0.8125rem; border-bottom: 1px solid var(--admin-border); }
+  .data-table tbody tr:hover { background: #f8f9fb; }
+  .data-table tr:last-child td { border-bottom: none; }
+  /* 全选标签 */
+  .batch-all-label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.8125rem; color: var(--admin-muted); cursor: pointer;
+  }
+  /* 排序值输入框 */
+  .sort-input {
+    width: 56px; padding: 4px 6px; text-align: center;
+    border: 1px solid var(--admin-border); border-radius: 6px;
+    font-size: 0.8125rem; background: var(--admin-bg);
+  }
+  .sort-input:focus { outline: none; border-color: var(--admin-primary); }
+  /* 列表缩略图：固定 16:9 宽高比 + cover 裁剪，任何比例的原图都不会撑破列宽或变形 */
+  .thumb {
+    width: 80px; height: 45px; object-fit: cover; border-radius: 6px;
+    display: block; max-width: 100%;
+    background: #f0f0f3; border: 1px solid var(--admin-border);
+  }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7rem; font-weight: 600;
+  }
+  .badge-on { background: #dcfce7; color: #15803d; }
+  .badge-off { background: #fee2e2; color: #b91c1c; }
+  .empty-row td { text-align: center; color: var(--admin-muted); padding: 28px 0; }
+  /* 图片预览层（与相册管理页一致） */
+  .preview { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; }
+  .preview[hidden] { display: none; }
+  .preview-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,0.85); cursor: zoom-out; }
+  .preview-image { position: relative; max-width: 92vw; max-height: 90vh; object-fit: contain; border-radius: 4px; }
+  .preview-close {
+    position: absolute; top: 16px; right: 16px; width: 36px; height: 36px;
+    border-radius: 50%; border: none; background: rgba(255,255,255,0.12);
+    color: #fff; font-size: 1.3rem; cursor: pointer;
+  }
+</style>
+
+<script>
+  import { COLOR_PRESETS, GRADIENT_PRESETS } from '../../config/backgroundPresets';
+
+  const toast = document.getElementById('toast')!;
+  const bgType = document.getElementById('bg_type') as HTMLSelectElement;
+  const bgValue = document.getElementById('bg_value') as HTMLInputElement;
+  const bgColor = document.getElementById('bg_color') as HTMLInputElement;
+  const bgColorPicker = document.getElementById('bg_color_picker') as HTMLInputElement;
+  const bgPosition = document.getElementById('bg_position') as HTMLInputElement;
+  const bgSize = document.getElementById('bg_size') as HTMLSelectElement;
+  const bgBlur = document.getElementById('bg_blur') as HTMLInputElement;
+  const bgBlurValue = document.getElementById('bg_blur_value')!;
+  const overlayEnabled = document.getElementById('overlay_enabled') as HTMLInputElement;
+  const overlayColor = document.getElementById('overlay_color') as HTMLInputElement;
+  const overlayColorPicker = document.getElementById('overlay_color_picker') as HTMLInputElement;
+  const overlayOpacity = document.getElementById('overlay_opacity') as HTMLInputElement;
+  const overlayOpacityValue = document.getElementById('overlay_opacity_value')!;
+  const wallpaperSelect = document.getElementById('bg_wallpaper_select') as HTMLSelectElement;
+  const tableBody = document.getElementById('tableBody')!;
+  const fileInput = document.getElementById('fileInput') as HTMLInputElement;
+  const fileName = document.getElementById('fileName')!;
+  // 上传预览
+  const uploadPreview = document.getElementById('uploadPreview') as HTMLElement;
+  const uploadThumb = document.getElementById('uploadThumb') as HTMLImageElement;
+  const uploadName = document.getElementById('uploadName')!;
+  const uploadSize = document.getElementById('uploadSize')!;
+  // 背景实时预览
+  const bgPreviewLayer = document.getElementById('bgPreviewLayer') as HTMLElement;
+  const bgPreviewOverlay = document.getElementById('bgPreviewOverlay') as HTMLElement;
+  // 预设库
+  const presetColors = document.getElementById('presetColors')!;
+  const presetGradients = document.getElementById('presetGradients')!;
+  // 裁剪器
+  const cropModal = document.getElementById('cropModal') as HTMLElement;
+  const cropCanvas = document.getElementById('cropCanvas') as HTMLCanvasElement;
+  const cropInfo = document.getElementById('cropInfo')!;
+
+  /** 操作按钮内联 SVG 图标（feather 风格，继承按钮文字颜色） */
+  const ICONS: Record<string, string> = {
+    image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+    link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
+    eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+    eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>',
+    del: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  };
+
+  /** 当前加载的外观配置（保存时整体提交，避免覆盖其他字段） */
+  let appearance: Record<string, any> = {};
+
+  /** 显示轻量提示 */
+  function showToast(msg: string) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  /** HTML 转义，防止 XSS */
+  function esc(s: any) {
+    return String(s ?? '').replace(/[<>&"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]!));
+  }
+
+  /** 图片 URL 合法性校验：本地上传路径或 http(s) 外部地址（含图床随机图） */
+  function isValidImageUrl(v: string): boolean {
+    return /^\/uploads\/[A-Za-z0-9._-]+$/.test(v) || /^https?:\/\/\S+$/i.test(v);
+  }
+
+  /** 颜色值合法性校验：hex / rgb / rgba */
+  function isValidColor(v: string): boolean {
+    return /^#[0-9a-fA-F]{3,8}$/.test(v.trim()) || /^rgba?\(\s*[\d.,\s%]+\)$/.test(v.trim());
+  }
+
+  /** 渐变值合法性校验：仅允许渐变函数常用字符，防止样式注入 */
+  function isValidGradient(v: string): boolean {
+    return /^[A-Za-z0-9,#%().\s-]+$/.test(v.trim()) && /gradient\(/.test(v);
+  }
+
+  /** 根据背景类型切换输入行的可见性 */
+  function toggleRows() {
+    const t = bgType.value;
+    (document.getElementById('row_bg_value') as HTMLElement).style.display = t === 'image' ? '' : 'none';
+    (document.getElementById('row_bg_color') as HTMLElement).style.display = t === 'color' ? '' : 'none';
+    (document.getElementById('row_bg_wallpaper') as HTMLElement).style.display = t === 'image' ? '' : 'none';
+  }
+
+  /**
+   * 将当前背景配置实时渲染到预览框
+   * 渲染方式与前台 Background.astro 一致（image/gradient/color + 模糊 + 遮罩），
+   * 预览框 overflow hidden 按 16:9 裁剪，超大图片自动缩放不遮挡内容
+   */
+  function updatePreview() {
+    const type = bgType.value;
+    const layer = bgPreviewLayer.style;
+    // 重置背景层各属性，避免切换类型后残留
+    layer.backgroundImage = '';
+    layer.backgroundColor = '';
+    layer.filter = '';
+    layer.transform = '';
+    layer.inset = '0';
+    layer.backgroundPosition = bgPosition.value.trim() || 'center';
+    layer.backgroundRepeat = 'no-repeat';
+    if (bgSize.value === 'repeat') {
+      layer.backgroundSize = 'auto';
+      layer.backgroundRepeat = 'repeat';
+    } else {
+      layer.backgroundSize = bgSize.value;
+    }
+    if (type === 'image' && bgValue.value.trim()) {
+      layer.backgroundImage = `url('${bgValue.value.trim().replace(/'/g, '%27')}')`;
+    } else if (type === 'gradient' && bgValue.value.trim()) {
+      layer.backgroundImage = bgValue.value.trim();
+    } else if (type === 'color' && bgColor.value.trim()) {
+      layer.backgroundColor = bgColor.value.trim();
+    }
+    // 模糊：轻微放大避免边缘露白（与前台行为一致）
+    const blur = parseInt(bgBlur.value, 10) || 0;
+    if (blur > 0) {
+      layer.filter = `blur(${blur}px)`;
+      layer.transform = 'scale(1.08)';
+      layer.inset = '-12px';
+    }
+    // 遮罩层
+    if (overlayEnabled.checked) {
+      bgPreviewOverlay.style.display = '';
+      bgPreviewOverlay.style.backgroundColor = isValidColor(overlayColor.value) ? overlayColor.value.trim() : '#000000';
+      bgPreviewOverlay.style.opacity = String(Math.min(100, Math.max(0, parseInt(overlayOpacity.value, 10) || 0)) / 100);
+    } else {
+      bgPreviewOverlay.style.display = 'none';
+    }
+  }
+
+  /** 渲染背景预设色块（纯色 / 渐变），点击后直接切换类型并应用 */
+  function renderPresets(): void {
+    presetColors.innerHTML = COLOR_PRESETS.map((c) =>
+      `<button type="button" class="preset-swatch" style="background:${c}" data-color="${c}" title="${c}">${c}</button>`
+    ).join('');
+    presetGradients.innerHTML = GRADIENT_PRESETS.map((g) =>
+      `<button type="button" class="preset-swatch" style="background:${g}" data-gradient="${esc(g)}" title="${esc(g)}">渐变</button>`
+    ).join('');
+    presetColors.querySelectorAll('[data-color]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        bgType.value = 'color';
+        bgColor.value = btn.getAttribute('data-color')!;
+        bgColorPicker.value = /^#[0-9a-fA-F]{6}$/.test(bgColor.value) ? bgColor.value : bgColorPicker.value;
+        toggleRows();
+        updatePreview();
+      });
+    });
+    presetGradients.querySelectorAll('[data-gradient]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        bgType.value = 'gradient';
+        bgValue.value = btn.getAttribute('data-gradient')!;
+        toggleRows();
+        updatePreview();
+      });
+    });
+  }
+
+  /** 当前预览缩略图的 objectURL（替换时释放旧引用，避免内存泄漏） */
+  let previewObjectUrl: string | null = null;
+
+  /** 刷新待上传文件的预览状态：缩略图 + 文件名 + 大小；未选择文件时回到占位文字 */
+  function refreshUploadPreview(): void {
+    const file = fileInput.files?.[0];
+    if (previewObjectUrl) {
+      URL.revokeObjectURL(previewObjectUrl);
+      previewObjectUrl = null;
+    }
+    if (!file) {
+      uploadPreview.hidden = true;
+      fileName.hidden = false;
+      fileName.textContent = '未选择文件';
+      return;
+    }
+    previewObjectUrl = URL.createObjectURL(file);
+    uploadThumb.src = previewObjectUrl;
+    uploadName.textContent = file.name;
+    uploadName.title = file.name;
+    uploadSize.textContent = formatSize(file.size);
+    fileName.hidden = true;
+    uploadPreview.hidden = false;
+  }
+
+  /** 加载外观配置到面板 */
+  async function loadAppearance() {
+    const res = await fetch('/api/admin/settings');
+    const data = await res.json();
+    try { appearance = JSON.parse(data['appearance'] ?? '{}'); } catch { appearance = {}; }
+    const bg = appearance.background ?? {};
+
+    bgType.value = bg.type ?? 'color';
+    bgValue.value = bg.type === 'image' ? (bg.value ?? '') : (bg.type === 'gradient' ? (bg.value ?? '') : '');
+    bgColor.value = bg.type === 'color' ? (bg.value ?? '#10131a') : '#10131a';
+    bgColorPicker.value = /^#[0-9a-fA-F]{6}$/.test(bgColor.value) ? bgColor.value : '#10131a';
+    bgPosition.value = bg.position ?? 'center';
+    bgSize.value = bg.size ?? 'cover';
+    bgBlur.value = String(bg.blur ?? 0);
+    bgBlurValue.textContent = `${bg.blur ?? 0}px`;
+    overlayEnabled.checked = !!bg.overlay?.enabled;
+    overlayColor.value = bg.overlay?.color ?? '#000000';
+    overlayColorPicker.value = /^#[0-9a-fA-F]{6}$/.test(overlayColor.value) ? overlayColor.value : '#000000';
+    overlayOpacity.value = String(Math.round((bg.overlay?.opacity ?? 0.35) * 100));
+    overlayOpacityValue.textContent = `${overlayOpacity.value}%`;
+    toggleRows();
+    updatePreview();
+  }
+
+  /** 从面板收集背景配置（含合法性校验，失败返回 null） */
+  function collectBackground(): Record<string, any> | null {
+    const type = bgType.value;
+    let value = '';
+    if (type === 'image') {
+      value = bgValue.value.trim();
+      if (!value || !isValidImageUrl(value)) {
+        showToast('图片地址无效：需为本地上传路径或 http(s) 链接');
+        return null;
+      }
+    } else if (type === 'color') {
+      value = bgColor.value.trim();
+      if (!isValidColor(value)) {
+        showToast('颜色值无效：请使用 #hex 或 rgba() 格式');
+        return null;
+      }
+    } else {
+      value = bgValue.value.trim();
+      if (!value || !isValidGradient(value)) {
+        showToast('渐变值无效：请使用 CSS 渐变语法，如 linear-gradient(135deg, #1a1a2e, #16213e)');
+        return null;
+      }
+    }
+    return {
+      type,
+      value,
+      overlay: {
+        enabled: overlayEnabled.checked,
+        color: isValidColor(overlayColor.value) ? overlayColor.value.trim() : '#000000',
+        opacity: Math.min(100, Math.max(0, parseInt(overlayOpacity.value, 10) || 0)) / 100,
+      },
+      blur: Math.min(20, Math.max(0, parseInt(bgBlur.value, 10) || 0)),
+      position: bgPosition.value.trim() || 'center',
+      size: bgSize.value,
+    };
+  }
+
+  /** 保存背景设置到 settings 表的 appearance 键 */
+  async function saveBackground(): Promise<boolean> {
+    const bg = collectBackground();
+    if (!bg) return false;
+    appearance.background = bg;
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appearance: JSON.stringify(appearance) }),
+    });
+    if (res.ok) {
+      showToast('背景设置已保存，刷新前台即可生效');
+      return true;
+    }
+    const data = await res.json();
+    showToast(data.error || '保存失败');
+    return false;
+  }
+
+  /** 将指定壁纸快捷设为背景 */
+  async function setAsBackground(url: string) {
+    bgType.value = 'image';
+    bgValue.value = url;
+    toggleRows();
+    updatePreview();
+    const ok = await saveBackground();
+    if (ok) loadAppearance();
+  }
+
+  /** 加载壁纸列表填充表格与快速选择下拉 */
+  async function loadList() {
+    const res = await fetch('/api/admin/wallpapers');
+    const data: any[] = await res.json();
+
+    // 填充快速选择下拉
+    wallpaperSelect.innerHTML = '<option value="">— 从已上传壁纸选择 —</option>' +
+      data.map(w => `<option value="${esc(w.url)}">${esc(w.filename)}</option>`).join('');
+
+    // 渲染表格
+    if (!data.length) {
+      tableBody.innerHTML = '<tr class="empty-row"><td colspan="7"><div class="table-state"><span class="table-state-icon">▧</span><strong>还没有壁纸</strong><span>上传第一张图片后会显示在这里</span></div></td></tr>';
+      return;
+    }
+    tableBody.innerHTML = data.map((w) => `
+      <tr>
+        <td><input type="checkbox" class="row-check row-select" data-id="${w.id}" /></td>
+        <td><input type="number" class="sort-input" data-sort="${w.id}" value="${w.sortOrder ?? 0}" min="0" title="排序值，越小越靠前" /></td>
+        <td><img class="thumb" src="${esc(w.url)}" alt="${esc(w.filename)}" width="80" height="45" loading="lazy" decoding="async" data-preview="${esc(w.url)}" title="点击查看大图" style="cursor: zoom-in; object-fit: cover;" /></td>
+        <td><div class="cell-title">${esc(w.filename)}</div></td>
+        <td>${formatSize(w.size)}</td>
+        <td><span class="badge ${w.enabled ? 'badge-on' : 'badge-off'}">${w.enabled ? '已启用' : '已禁用'}</span></td>
+        <td class="action-cell">
+          <div class="row-actions">
+            <button class="btn-icon accent" data-bg="${esc(w.url)}">${ICONS.image}设为背景</button>
+            <details class="action-menu">
+              <summary class="btn-icon ghost" aria-label="更多操作" title="更多操作">•••</summary>
+              <div class="action-menu-popover">
+                <button class="action-menu-item" data-copy="${esc(w.url)}">${ICONS.link}复制链接</button>
+                ${w.enabled
+                  ? `<button class="action-menu-item warning" data-toggle="${w.id}" data-enabled="${w.enabled}">${ICONS.eyeOff}禁用</button>`
+                  : `<button class="action-menu-item success" data-toggle="${w.id}" data-enabled="${w.enabled}">${ICONS.eye}启用</button>`}
+                <button class="action-menu-item danger" data-del="${w.id}">${ICONS.del}删除</button>
+              </div>
+            </details>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+
+    // 批量选择状态恢复：刷新计数与全选框
+    refreshBatchState();
+
+    // 排序值编辑：失焦时保存（与旧值不同才提交）
+    tableBody.querySelectorAll('[data-sort]').forEach(input => {
+      input.addEventListener('change', async () => {
+        const el = input as HTMLInputElement;
+        const id = parseInt(el.getAttribute('data-sort')!, 10);
+        const val = Math.max(0, parseInt(el.value, 10) || 0);
+        el.value = String(val);
+        await fetch(`/api/admin/wallpapers/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sortOrder: val }),
+        });
+        showToast('排序已更新');
+        loadList();
+      });
+    });
+    tableBody.querySelectorAll('[data-bg]').forEach(btn => {
+      btn.addEventListener('click', () => setAsBackground(btn.getAttribute('data-bg')!));
+    });
+    tableBody.querySelectorAll('[data-copy]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        navigator.clipboard.writeText(btn.getAttribute('data-copy')!);
+        showToast('链接已复制');
+      });
+    });
+    tableBody.querySelectorAll('[data-toggle]').forEach(btn => {
+      btn.addEventListener('click', () => toggleEnabled(parseInt(btn.getAttribute('data-toggle')!), btn.getAttribute('data-enabled') === '1'));
+    });
+    tableBody.querySelectorAll('[data-del]').forEach(btn => {
+      btn.addEventListener('click', () => delItem(parseInt(btn.getAttribute('data-del')!)));
+    });
+    // 缩略图点击查看大图（与相册管理页一致的预览方式）
+    tableBody.querySelectorAll<HTMLImageElement>('[data-preview]').forEach(img => {
+      img.addEventListener('click', () => openPreview(img.dataset.preview!));
+    });
+  }
+
+  /* ==================== 图片预览（与相册管理页一致：遮罩/×/ESC 关闭，contain 大图） ==================== */
+  const previewLayer = document.getElementById('preview') as HTMLElement;
+  const previewImage = document.getElementById('previewImage') as HTMLImageElement;
+
+  /**
+   * 打开预览层显示大图
+   * @param src 图片地址
+   */
+  function openPreview(src: string): void {
+    previewImage.src = src;
+    previewLayer.hidden = false;
+  }
+
+  /** 关闭预览层并释放图片引用 */
+  function closePreview(): void {
+    previewLayer.hidden = true;
+    previewImage.src = '';
+  }
+
+  previewLayer.querySelector('.preview-close')!.addEventListener('click', closePreview);
+  previewLayer.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).dataset.previewClose !== undefined) closePreview();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !previewLayer.hidden) closePreview();
+  });
+
+  /** 切换壁纸启用状态 */
+  async function toggleEnabled(id: number, currentEnabled: boolean) {
+    await fetch(`/api/admin/wallpapers/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !currentEnabled }),
+    });
+    loadList();
+  }
+
+  /** 删除壁纸（含物理文件） */
+  async function delItem(id: number) {
+    if (!confirm('确定删除此壁纸？关联的物理文件也会被删除。')) return;
+    const res = await fetch(`/api/admin/wallpapers/${id}`, { method: 'DELETE' });
+    if (res.ok) showToast('已删除');
+    else {
+      const data = await res.json();
+      showToast(data.error || '删除失败');
+    }
+    loadList();
+  }
+
+  /* ---------- 批量选择与批量删除 ---------- */
+  const checkAll = document.getElementById('checkAll') as HTMLInputElement;
+  const selCount = document.getElementById('selCount')!;
+  const btnBatchDel = document.getElementById('btnBatchDel') as HTMLButtonElement;
+
+  /** 刷新选中计数、批量删除按钮与全选框状态 */
+  function refreshBatchState(): void {
+    const boxes = tableBody.querySelectorAll<HTMLInputElement>('.row-select');
+    const checked = tableBody.querySelectorAll<HTMLInputElement>('.row-select:checked');
+    selCount.textContent = String(checked.length);
+    btnBatchDel.disabled = checked.length === 0;
+    checkAll.checked = boxes.length > 0 && checked.length === boxes.length;
+  }
+
+  // 全选 / 取消全选
+  checkAll.addEventListener('change', () => {
+    tableBody.querySelectorAll<HTMLInputElement>('.row-select').forEach((box) => { box.checked = checkAll.checked; });
+    refreshBatchState();
+  });
+
+  // 单行勾选联动（事件委托，列表重新渲染后依然生效）
+  tableBody.addEventListener('change', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('row-select')) refreshBatchState();
+  });
+
+  /** 批量删除选中壁纸（含物理文件） */
+  btnBatchDel.addEventListener('click', async () => {
+    const ids = Array.from(tableBody.querySelectorAll<HTMLInputElement>('.row-select:checked'))
+      .map((b) => parseInt(b.dataset.id!, 10))
+      .filter((n) => Number.isInteger(n));
+    if (!ids.length) return;
+    if (!confirm(`确定删除选中的 ${ids.length} 张壁纸？关联的物理文件也会被删除，此操作不可恢复。`)) return;
+    const res = await fetch('/api/admin/wallpapers/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(`已删除 ${data.deleted} 张壁纸`);
+      checkAll.checked = false;
+      loadList();
+    } else {
+      const data = await res.json();
+      showToast(data.error || '批量删除失败');
+    }
+  });
+
+  /** 将字节大小格式化为可读字符串 */
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+  }
+
+  /* ---------- 事件绑定 ---------- */
+  bgType.addEventListener('change', () => { toggleRows(); updatePreview(); });
+  bgColorPicker.addEventListener('input', () => { bgColor.value = bgColorPicker.value; updatePreview(); });
+  overlayColorPicker.addEventListener('input', () => { overlayColor.value = overlayColorPicker.value; updatePreview(); });
+  bgBlur.addEventListener('input', () => { bgBlurValue.textContent = `${bgBlur.value}px`; updatePreview(); });
+  overlayOpacity.addEventListener('input', () => { overlayOpacityValue.textContent = `${overlayOpacity.value}%`; updatePreview(); });
+  overlayEnabled.addEventListener('change', updatePreview);
+  overlayColor.addEventListener('input', updatePreview);
+  bgValue.addEventListener('input', updatePreview);
+  bgColor.addEventListener('input', updatePreview);
+  bgPosition.addEventListener('input', updatePreview);
+  bgSize.addEventListener('change', updatePreview);
+  wallpaperSelect.addEventListener('change', () => {
+    if (wallpaperSelect.value) {
+      bgType.value = 'image';
+      bgValue.value = wallpaperSelect.value;
+      toggleRows();
+      updatePreview();
+    }
+  });
+  document.getElementById('btnSaveBg')!.addEventListener('click', saveBackground);
+  document.getElementById('btnResetBg')!.addEventListener('click', async () => {
+    appearance.background = { type: 'color', value: '', overlay: { enabled: false, color: '#000000', opacity: 0.35 }, blur: 0, position: 'center', size: 'cover' };
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ appearance: JSON.stringify(appearance) }),
+    });
+    if (res.ok) {
+      showToast('已恢复为跟随主题背景色');
+      loadAppearance();
+    }
+  });
+
+  fileInput.addEventListener('change', refreshUploadPreview);
+
+  // 移除已选文件：清空 input 并回到占位状态
+  document.getElementById('btnClearFile')!.addEventListener('click', () => {
+    fileInput.value = '';
+    refreshUploadPreview();
+  });
+
+  document.getElementById('uploadForm')!.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = fileInput.files?.[0];
+    if (!file) { showToast('请先选择文件'); return; }
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch('/api/admin/wallpapers', { method: 'POST', body: formData });
+    if (res.ok) {
+      showToast('上传成功');
+      fileInput.value = '';
+      refreshUploadPreview();
+      loadList();
+    } else {
+      const data = await res.json();
+      showToast(data.error || '上传失败');
+    }
+  });
+
+  /* ---------- 图片裁剪器（支持拖动移动 / 边缘调整 / 比例锁定 / 空白处新建） ---------- */
+  /** 裁剪画布最大显示宽度（px），超高分辨率图片按比例缩小绘制 */
+  const CROP_MAX_W = 720;
+  /** 选区最小边长（画布显示坐标 px） */
+  const CROP_MIN_SIZE = 8;
+  /** 控制柄命中阈值（px） */
+  const HANDLE_HIT = 10;
+  /** 待裁剪的原始文件与图片对象 */
+  let cropFile: File | null = null;
+  let cropImg: HTMLImageElement | null = null;
+  /** 画布坐标 → 原图像素的缩放比 */
+  let cropScale = 1;
+  /** 当前选区（画布显示坐标） */
+  let selRect: { x: number; y: number; w: number; h: number } | null = null;
+  /** 锁定比例（w/h），null 表示自由调整 */
+  let cropRatio: number | null = null;
+  /** 拖拽模式：新建选区 / 移动 / 八方向调整 */
+  type DragMode = 'new' | 'move' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w';
+  let dragMode: DragMode | null = null;
+  /** 拖拽起始指针位置（new 模式的锚点；move/resize 的位移基准） */
+  let dragStartPoint: { x: number; y: number } | null = null;
+  /** 拖拽开始时的选区快照（move/resize 基于快照计算，避免误差累积） */
+  let dragOriginRect: { x: number; y: number; w: number; h: number } | null = null;
+
+  /** 拖拽模式 → 鼠标光标样式 */
+  const MODE_CURSOR: Record<DragMode | 'outside', string> = {
+    new: 'crosshair', move: 'move',
+    nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize',
+    n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', outside: 'crosshair',
+  };
+
+  /** 比例锁定按钮组 */
+  const ratioButtons = document.querySelectorAll<HTMLButtonElement>('#cropRatioBar [data-ratio]');
+
+  // 比例切换：null = 自由；已有选区时以中心为锚按新比例重算
+  ratioButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      cropRatio = btn.dataset.ratio === 'free' ? null : parseFloat(btn.dataset.ratio!);
+      ratioButtons.forEach((b) => b.classList.toggle('active', b === btn));
+      if (selRect && cropRatio) {
+        const cx = selRect.x + selRect.w / 2;
+        const cy = selRect.y + selRect.h / 2;
+        let w = selRect.w;
+        let h = w / cropRatio;
+        if (h > cropCanvas.height) { h = cropCanvas.height; w = h * cropRatio; }
+        selRect = clampRect({ x: cx - w / 2, y: cy - h / 2, w, h });
+        updateCropInfo();
+        drawCrop();
+      }
+    });
+  });
+
+  /**
+   * 将选区钳制在画布范围内并保证最小尺寸
+   * @param r 目标选区
+   * @returns 钳制后的选区
+   */
+  function clampRect(r: { x: number; y: number; w: number; h: number }) {
+    const w = Math.max(CROP_MIN_SIZE, Math.min(r.w, cropCanvas.width));
+    const h = Math.max(CROP_MIN_SIZE, Math.min(r.h, cropCanvas.height));
+    return {
+      x: Math.min(Math.max(r.x, 0), cropCanvas.width - w),
+      y: Math.min(Math.max(r.y, 0), cropCanvas.height - h),
+      w,
+      h,
+    };
+  }
+
+  /**
+   * 命中检测：判断画布坐标位于选区的哪个控制柄 / 内部 / 外部
+   * 锁定比例时禁用四边中点柄（仅保留四角等比调整 + 移动 + 新建）
+   * @param p 画布坐标
+   */
+  function hitTest(p: { x: number; y: number }): DragMode | 'outside' {
+    if (!selRect) return 'outside';
+    const { x, y, w, h } = selRect;
+    const nearLeft = Math.abs(p.x - x) <= HANDLE_HIT && p.y >= y - HANDLE_HIT && p.y <= y + h + HANDLE_HIT;
+    const nearRight = Math.abs(p.x - (x + w)) <= HANDLE_HIT && p.y >= y - HANDLE_HIT && p.y <= y + h + HANDLE_HIT;
+    const nearTop = Math.abs(p.y - y) <= HANDLE_HIT && p.x >= x - HANDLE_HIT && p.x <= x + w + HANDLE_HIT;
+    const nearBottom = Math.abs(p.y - (y + h)) <= HANDLE_HIT && p.x >= x - HANDLE_HIT && p.x <= x + w + HANDLE_HIT;
+    if (nearLeft && nearTop) return 'nw';
+    if (nearRight && nearTop) return 'ne';
+    if (nearLeft && nearBottom) return 'sw';
+    if (nearRight && nearBottom) return 'se';
+    if (!cropRatio && nearTop) return 'n';
+    if (!cropRatio && nearBottom) return 's';
+    if (!cropRatio && nearLeft) return 'w';
+    if (!cropRatio && nearRight) return 'e';
+    const inside = p.x > x && p.x < x + w && p.y > y && p.y < y + h;
+    return inside ? 'move' : 'outside';
+  }
+
+  /**
+   * 根据当前拖拽模式与指针位置计算新选区
+   * @param p 当前指针位置（画布坐标）
+   */
+  function applyDrag(p: { x: number; y: number }): void {
+    const mode = dragMode!;
+    // 移动：整体平移并钳制在画布内
+    if (mode === 'move' && dragOriginRect && dragStartPoint) {
+      const dx = p.x - dragStartPoint.x;
+      const dy = p.y - dragStartPoint.y;
+      selRect = clampRect({ ...dragOriginRect, x: dragOriginRect.x + dx, y: dragOriginRect.y + dy });
+      return;
+    }
+    // 新建：以起点为锚，向拖动方向延伸（锁定比例时按比例计算）
+    if (mode === 'new' && dragStartPoint) {
+      if (cropRatio) {
+        const dw = p.x - dragStartPoint.x;
+        let w = Math.max(CROP_MIN_SIZE, Math.abs(dw));
+        let h = w / cropRatio;
+        if (h > cropCanvas.height) { h = cropCanvas.height; w = h * cropRatio; }
+        const x = dw >= 0 ? dragStartPoint.x : dragStartPoint.x - w;
+        selRect = clampRect({ x, y: dragStartPoint.y, w, h });
+      } else {
+        selRect = {
+          x: Math.min(dragStartPoint.x, p.x),
+          y: Math.min(dragStartPoint.y, p.y),
+          w: Math.abs(p.x - dragStartPoint.x),
+          h: Math.abs(p.y - dragStartPoint.y),
+        };
+      }
+      return;
+    }
+    // 调整大小
+    if (!dragOriginRect) return;
+    const o = dragOriginRect;
+    if (cropRatio && mode.length === 2) {
+      // 锁定比例 + 四角柄：对角点为锚等比缩放
+      const anchorX = mode.includes('w') ? o.x + o.w : o.x;
+      const anchorY = mode.includes('n') ? o.y + o.h : o.y;
+      let w = Math.abs(p.x - anchorX);
+      let h = w / cropRatio!;
+      const maxH = mode.includes('n') ? anchorY : cropCanvas.height - anchorY;
+      const maxW = mode.includes('w') ? anchorX : cropCanvas.width - anchorX;
+      if (h > maxH) { h = Math.max(CROP_MIN_SIZE, maxH); w = h * cropRatio!; }
+      if (w > maxW) { w = Math.max(CROP_MIN_SIZE, maxW); h = w / cropRatio!; }
+      const x = mode.includes('w') ? anchorX - w : anchorX;
+      const y = mode.includes('n') ? anchorY - h : anchorY;
+      selRect = { x, y, w: Math.max(CROP_MIN_SIZE, w), h: Math.max(CROP_MIN_SIZE, h) };
+    } else if (!cropRatio) {
+      // 自由模式：八方向调整
+      let { x, y, w, h } = o;
+      if (mode.includes('w')) { const nx = Math.min(p.x, o.x + o.w - CROP_MIN_SIZE); x = nx; w = o.x + o.w - nx; }
+      if (mode.includes('e')) { w = Math.max(CROP_MIN_SIZE, p.x - o.x); }
+      if (mode.includes('n')) { const ny = Math.min(p.y, o.y + o.h - CROP_MIN_SIZE); y = ny; h = o.y + o.h - ny; }
+      if (mode.includes('s')) { h = Math.max(CROP_MIN_SIZE, p.y - o.y); }
+      selRect = clampRect({ x, y, w, h });
+    }
+    // 锁定比例 + 单边柄（mode.length === 1）：不响应（hitTest 已禁用）
+  }
+
+  /** 更新选区尺寸信息（换算为原图像素） */
+  function updateCropInfo(): void {
+    if (!selRect) return;
+    const sw = Math.round(selRect.w * cropScale);
+    const sh = Math.round(selRect.h * cropScale);
+    cropInfo.textContent = `选区：${sw} × ${sh} px（原图像素）`;
+  }
+
+  /** 打开裁剪器：加载当前选择的文件并初始化画布 */
+  function openCropper(): void {
+    const file = fileInput.files?.[0];
+    if (!file) { showToast('请先选择文件'); return; }
+    cropFile = file;
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      cropImg = img;
+      const w = Math.min(CROP_MAX_W, img.naturalWidth);
+      cropCanvas.width = Math.round(w);
+      cropCanvas.height = Math.round(img.naturalHeight * (w / img.naturalWidth));
+      cropScale = img.naturalWidth / cropCanvas.width;
+      dragMode = null;
+      dragStartPoint = null;
+      dragOriginRect = null;
+      resetSelection();
+      cropModal.classList.add('show');
+    };
+    img.onerror = () => showToast('图片加载失败');
+    img.src = url;
+  }
+
+  /** 重置选区为居中 80% 区域（可直接拖动 / 调整） */
+  function resetSelection(): void {
+    if (!cropImg) return;
+    selRect = {
+      x: cropCanvas.width * 0.1,
+      y: cropCanvas.height * 0.1,
+      w: cropCanvas.width * 0.8,
+      h: cropCanvas.height * 0.8,
+    };
+    updateCropInfo();
+    drawCrop();
+  }
+
+  /** 绘制裁剪画布：底图 + 选区外遮罩 + 三分参考线 + 边框 + 控制柄 */
+  function drawCrop(): void {
+    if (!cropImg) return;
+    const ctx = cropCanvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+    ctx.drawImage(cropImg, 0, 0, cropCanvas.width, cropCanvas.height);
+    if (!selRect || selRect.w <= 2 || selRect.h <= 2) return;
+    // 选区外半透明遮罩（evenodd 填充）
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, cropCanvas.width, cropCanvas.height);
+    ctx.rect(selRect.x, selRect.y, selRect.w, selRect.h);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fill('evenodd');
+    ctx.restore();
+    // 三分构图参考线
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 1; i <= 2; i++) {
+      ctx.moveTo(selRect.x + (selRect.w * i) / 3, selRect.y);
+      ctx.lineTo(selRect.x + (selRect.w * i) / 3, selRect.y + selRect.h);
+      ctx.moveTo(selRect.x, selRect.y + (selRect.h * i) / 3);
+      ctx.lineTo(selRect.x + selRect.w, selRect.y + (selRect.h * i) / 3);
+    }
+    ctx.stroke();
+    // 边框
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(selRect.x, selRect.y, selRect.w, selRect.h);
+    // 控制柄：自由模式 8 个（四角 + 四边中点），锁定比例仅 4 角
+    const { x, y, w, h } = selRect;
+    const corners: [number, number][] = [[x, y], [x + w, y], [x, y + h], [x + w, y + h]];
+    const edges: [number, number][] = [
+      [x + w / 2, y], [x + w / 2, y + h], [x, y + h / 2], [x + w, y + h / 2],
+    ];
+    const handles = cropRatio ? corners : [...corners, ...edges];
+    for (const [hx, hy] of handles) {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(hx - 4, hy - 4, 8, 8);
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(hx - 4, hy - 4, 8, 8);
+    }
+  }
+
+  /** 将指针事件坐标换算为画布内坐标（考虑 CSS 显示缩放并钳制在画布范围内） */
+  function canvasPoint(e: PointerEvent): { x: number; y: number } {
+    const r = cropCanvas.getBoundingClientRect();
+    const sx = cropCanvas.width / r.width;
+    const sy = cropCanvas.height / r.height;
+    return {
+      x: Math.min(Math.max((e.clientX - r.left) * sx, 0), cropCanvas.width),
+      y: Math.min(Math.max((e.clientY - r.top) * sy, 0), cropCanvas.height),
+    };
+  }
+
+  cropCanvas.addEventListener('pointerdown', (e) => {
+    if (!cropImg) return;
+    const p = canvasPoint(e);
+    const hit = hitTest(p);
+    dragMode = hit === 'outside' ? 'new' : hit;
+    dragStartPoint = p;
+    dragOriginRect = hit === 'outside' || !selRect ? null : { ...selRect };
+    cropCanvas.setPointerCapture(e.pointerId);
+    drawCrop();
+  });
+  cropCanvas.addEventListener('pointermove', (e) => {
+    const p = canvasPoint(e);
+    if (!dragMode) {
+      // 未拖拽时仅更新光标反馈
+      cropCanvas.style.cursor = MODE_CURSOR[hitTest(p)];
+      return;
+    }
+    applyDrag(p);
+    drawCrop();
+  });
+  cropCanvas.addEventListener('pointerup', () => {
+    if (!dragMode) return;
+    dragMode = null;
+    dragStartPoint = null;
+    dragOriginRect = null;
+    if (selRect && selRect.w >= CROP_MIN_SIZE && selRect.h >= CROP_MIN_SIZE) {
+      updateCropInfo();
+    } else {
+      selRect = null;
+      cropInfo.textContent = '未选择区域（在空白处拖拽新建选区）';
+    }
+    drawCrop();
+  });
+
+  // 裁剪器按钮：打开 / 重置选区 / 取消 / 点击遮罩关闭
+  document.getElementById('btnCrop')!.addEventListener('click', openCropper);
+  document.getElementById('btnCropReset')!.addEventListener('click', resetSelection);
+  document.getElementById('btnCropCancel')!.addEventListener('click', () => cropModal.classList.remove('show'));
+  cropModal.addEventListener('click', (e) => { if (e.target === cropModal) cropModal.classList.remove('show'); });
+
+  /** 应用裁剪：按选区从原图裁剪，回填到上传控件并刷新预览 */
+  document.getElementById('btnCropApply')!.addEventListener('click', () => {
+    if (!cropImg || !selRect || selRect.w < 8 || selRect.h < 8) {
+      showToast('请先拖拽框选一个有效区域');
+      return;
+    }
+    const sx = Math.round(selRect.x * cropScale);
+    const sy = Math.round(selRect.y * cropScale);
+    const sw = Math.round(selRect.w * cropScale);
+    const sh = Math.round(selRect.h * cropScale);
+    const out = document.createElement('canvas');
+    out.width = sw;
+    out.height = sh;
+    out.getContext('2d')!.drawImage(cropImg, sx, sy, sw, sh, 0, 0, sw, sh);
+    // gif 无法由 Canvas 直接编码，统一导出为 png；其余格式保留原 MIME
+    const srcType = cropFile?.type ?? 'image/png';
+    const outType = srcType === 'image/gif' ? 'image/png' : srcType;
+    const ext = outType === 'image/jpeg' ? 'jpg' : outType === 'image/webp' ? 'webp' : 'png';
+    const baseName = (cropFile?.name ?? 'image').replace(/\.[^.]+$/, '');
+    out.toBlob((blob) => {
+      if (!blob) { showToast('裁剪失败，请重试'); return; }
+      const cropped = new File([blob], `${baseName}-cropped.${ext}`, { type: outType });
+      const dt = new DataTransfer();
+      dt.items.add(cropped);
+      fileInput.files = dt.files;
+      refreshUploadPreview();
+      cropModal.classList.remove('show');
+      showToast(`已裁剪为 ${sw} × ${sh} px，请点击「确认上传」`);
+    }, outType, 0.92);
+  });
+
+  loadAppearance();
+  loadList();
+  renderPresets();
+  updatePreview();
+</script>

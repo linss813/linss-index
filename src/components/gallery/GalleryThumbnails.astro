@@ -1,0 +1,71 @@
+---
+/**
+ * Lightbox 底部缩略图条（§28）
+ * 职责：横向滚动展示当前列表全部缩略图（只加载 thumbnail，绝不加载原图）
+ * 当前高亮与自动滚动到可见区域由 Viewer 脚本控制
+ */
+import type { GalleryItem } from '../../types/gallery';
+
+interface Props {
+  /** 当前展示列表（与 Viewer 数据一致） */
+  items: GalleryItem[];
+}
+
+const { items } = Astro.props;
+---
+
+<div class="thumb-strip" id="galleryThumbStrip">
+  <div class="thumb-track" id="galleryThumbTrack">
+    {
+      items.map((it, i) => (
+        <button type="button" class="thumb-cell" data-thumb-index={i} aria-label={`第 ${i + 1} 张：${it.title || '图片'}`}>
+          <img src={it.thumbnail || it.image} alt="" loading="lazy" decoding="async" />
+        </button>
+      ))
+    }
+  </div>
+</div>
+
+<style>
+  .thumb-strip {
+    width: 100%;
+    max-width: min(94vw, 1200px);
+    overflow-x: auto;
+    scrollbar-width: thin;
+    padding: 6px 2px;
+    /* 顶部 hairline 分隔（§26 布局：图片区与缩略图条分离） */
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+  }
+  .thumb-track {
+    display: flex;
+    gap: 8px;
+    width: max-content;
+    margin: 0 auto;
+  }
+  .thumb-cell {
+    width: 64px;
+    height: 42px;
+    flex-shrink: 0;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 3px;
+    overflow: hidden;
+    background: transparent;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity var(--transition-fast), border-color var(--transition-fast);
+  }
+  .thumb-cell img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+  .thumb-cell:hover { opacity: 0.9; }
+  .thumb-cell.current {
+    opacity: 1;
+    border-color: #fff;
+    /* 当前图片明显状态（§28） */
+    box-shadow: 0 0 0 1px #fff;
+  }
+</style>

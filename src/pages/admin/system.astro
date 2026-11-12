@@ -1,0 +1,216 @@
+---
+/**
+ * 系统信息页
+ * 展示 Portal 版本、数据库路径与大小、Node.js 版本、运行环境
+ * 以及最近 10 条管理员操作日志
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { db, schema } from '../../lib/db';
+import { envConfig } from '../../lib/env';
+import { desc } from 'drizzle-orm';
+import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+/** Portal 版本号 */
+const PORTAL_VERSION = '2.0.0';
+
+/** 当前 Node.js 运行时版本 */
+const nodeVersion = process.version;
+
+/** 运行环境：开发 / 生产 */
+const environment = envConfig.isProd ? 'production' : 'development';
+
+/** 数据库文件绝对路径（用于展示与读取大小） */
+const dbPath = resolve(envConfig.databaseUrl);
+
+/**
+ * 读取数据库文件大小（字节）
+ * 文件不存在或不可访问时返回 null
+ */
+function getDbSize(path: string): number | null {
+  try {
+    const stat = statSync(path);
+    return stat.size;
+  } catch {
+    return null;
+  }
+}
+
+/** 数据库文件大小（字节） */
+const dbSize = getDbSize(dbPath);
+
+/**
+ * 将字节数格式化为易读字符串
+ * @param bytes 字节数
+ * @returns 形如 1.50 MB / 800.00 KB 的字符串
+ */
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(2)} KB`;
+  const mb = kb / 1024;
+  if (mb < 1024) return `${mb.toFixed(2)} MB`;
+  const gb = mb / 1024;
+  return `${gb.toFixed(2)} GB`;
+}
+
+/** 数据库大小展示文本 */
+const dbSizeText = dbSize === null ? '无法读取' : formatSize(dbSize);
+
+// 查询最近 10 条管理员操作日志
+const recentLogs = db.select().from(schema.adminLogs)
+  .orderBy(desc(schema.adminLogs.createdAt))
+  .limit(10)
+  .all();
+---
+
+<AdminLayout title="系统信息" active="system">
+  <!-- 系统信息概览面板 -->
+  <section class="info-panel">
+    <h2 class="panel-title">系统信息</h2>
+    <dl class="info-list">
+      <div class="info-row">
+        <dt>Portal Version</dt>
+        <dd>{PORTAL_VERSION}</dd>
+      </div>
+      <div class="info-row">
+        <dt>数据库路径</dt>
+        <dd class="mono">{dbPath}</dd>
+      </div>
+      <div class="info-row">
+        <dt>数据库大小</dt>
+        <dd>{dbSizeText}</dd>
+      </div>
+      <div class="info-row">
+        <dt>Node.js 版本</dt>
+        <dd>{nodeVersion}</dd>
+      </div>
+      <div class="info-row">
+        <dt>运行环境</dt>
+        <dd>{environment}</dd>
+      </div>
+    </dl>
+  </section>
+
+  <!-- 管理员操作日志面板 -->
+  <section class="info-panel">
+    <h2 class="panel-title">管理员操作日志（最近 10 条）</h2>
+    {recentLogs.length === 0 ? (
+      <p class="empty">暂无日志</p>
+    ) : (
+      <div class="table-wrap">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>操作 (action)</th>
+              <th>目标 (target)</th>
+              <th>详情 (detail)</th>
+              <th>IP</th>
+              <th>时间 (created_at)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentLogs.map((log) => (
+              <tr>
+                <td><span class="tag">{log.action}</span></td>
+                <td>{log.target ?? '-'}</td>
+                <td class="detail">{log.detail ?? '-'}</td>
+                <td class="mono">{log.ip ?? '-'}</td>
+                <td class="mono">{log.createdAt}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </section>
+</AdminLayout>
+
+<style>
+  /* 信息面板卡片样式，沿用 AdminLayout 设计风格 */
+  .info-panel {
+    background: var(--admin-bg);
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .panel-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  /* 键值对信息列表 */
+  .info-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .info-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--admin-border);
+    font-size: 0.875rem;
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-row dt { color: var(--admin-muted); flex-shrink: 0; }
+  .info-row dd { font-weight: 500; text-align: right; word-break: break-all; }
+  /* 等宽字体用于路径、IP、时间戳等 */
+  .mono {
+    font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    font-size: 0.8125rem;
+  }
+  /* 空状态文本 */
+  .empty {
+    color: var(--admin-muted);
+    font-size: 0.875rem;
+    padding: 8px 0;
+  }
+  /* 表格容器：小屏可横向滚动 */
+  .table-wrap {
+    overflow-x: auto;
+  }
+  .log-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+  }
+  .log-table th,
+  .log-table td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--admin-border);
+    vertical-align: top;
+  }
+  .log-table th {
+    color: var(--admin-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.75rem;
+    background: var(--admin-bg);
+    position: sticky;
+    top: 0;
+  }
+  .log-table tbody tr:hover {
+    background: rgba(0, 0, 0, 0.02);
+  }
+  /* 操作类型小标签 */
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: rgba(37, 99, 235, 0.1);
+    color: var(--admin-primary);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  /* 详情列内容限制最大宽度并自动换行 */
+  .detail {
+    max-width: 360px;
+    word-break: break-all;
+    color: #4b5563;
+  }
+</style>

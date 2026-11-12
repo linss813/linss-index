@@ -1,0 +1,293 @@
+---
+/**
+ * 网站基础设置页
+ * 修改站点名称、标题、描述、域名、Hero 文案、Footer 信息、GitHub URL
+ * 保存后立即影响前台
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { DEFAULT_ADMIN_PATH } from '../../lib/admin-path';
+---
+
+<AdminLayout title="基础设置" active="settings">
+  <form id="settingsForm" class="settings-form">
+    <fieldset class="fieldset">
+      <legend>站点信息</legend>
+      <div class="form-row">
+        <label>网站名称</label>
+        <input type="text" id="site_name" />
+      </div>
+      <div class="form-row">
+        <label>SEO 标题</label>
+        <input type="text" id="site_title" />
+      </div>
+      <div class="form-row">
+        <label>SEO 描述</label>
+        <input type="text" id="site_description" />
+      </div>
+      <div class="form-row">
+        <label>站点地址</label>
+        <input type="url" id="site_url" placeholder="https://" />
+      </div>
+      <div class="form-row">
+        <label>GitHub 主页</label>
+        <input type="url" id="github_url" placeholder="https://github.com" />
+      </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend>Hero 区域</legend>
+      <div class="form-row">
+        <label>主标题</label>
+        <input type="text" id="hero_title" />
+      </div>
+      <div class="form-row">
+        <label>副标题</label>
+        <input type="text" id="hero_subtitle" />
+      </div>
+      <div class="form-row">
+        <label>简短介绍</label>
+        <input type="text" id="hero_description" />
+      </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend>区块标题</legend>
+      <div class="form-row">
+        <label>Featured 区块标题</label>
+        <input type="text" id="section_featured_title" />
+      </div>
+      <div class="form-row">
+        <label>Other Services 区块标题</label>
+        <input type="text" id="section_other_title" />
+      </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend>页脚信息</legend>
+      <div class="form-row">
+        <label>版权主体</label>
+        <input type="text" id="footer_copyright" />
+      </div>
+      <div class="form-row">
+        <label>版权年份</label>
+        <input type="number" id="footer_year" />
+      </div>
+      <div class="form-row">
+        <label>构建说明</label>
+        <input type="text" id="footer_built_with" />
+      </div>
+      <div class="form-row">
+        <label>构建说明链接</label>
+        <input type="url" id="footer_built_with_url" />
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">保存设置</button>
+    </div>
+  </form>
+
+  <!-- 安全设置：后台访问路径（独立面板，使用专用 API，避免随表单误提交） -->
+  <fieldset class="fieldset security-panel">
+    <legend>安全设置 Security</legend>
+    <div class="form-row">
+      <label>后台访问路径</label>
+      <div class="path-row">
+        <span class="path-prefix">/</span>
+        <input type="text" id="adminPathInput" placeholder="例如 secret-panel" autocomplete="off" spellcheck="false" />
+      </div>
+      <p class="path-hint">3-32 位小写字母、数字、连字符或下划线。修改后旧地址立即 404，接口地址同步隐藏，请牢记新地址。</p>
+      <p class="path-current">当前地址：<code id="adminPathCurrent">/{DEFAULT_ADMIN_PATH}</code></p>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="btn-primary" id="btnSaveAdminPath">修改后台路径</button>
+      <button type="button" class="btn-secondary" id="btnResetAdminPath" data-default-path={DEFAULT_ADMIN_PATH}>恢复默认 /{DEFAULT_ADMIN_PATH}</button>
+    </div>
+    <p class="path-result" id="adminPathResult" role="status"></p>
+  </fieldset>
+
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<script>
+  /**
+   * 后台访问路径管理逻辑
+   * 加载当前路径并回填；修改前二次确认，保存后展示新地址并提示旧地址失效
+   */
+  const pathInput = document.getElementById('adminPathInput') as HTMLInputElement;
+  const pathCurrent = document.getElementById('adminPathCurrent') as HTMLElement;
+  const pathResult = document.getElementById('adminPathResult') as HTMLElement;
+  const defaultAdminPath = document.getElementById('btnResetAdminPath')?.getAttribute('data-default-path') || 'control-room';
+
+  /**
+   * 渲染结果提示
+   * @param msg 提示文本
+   * @param ok 是否成功样式
+   * @param url 成功时的新后台地址（提供可点击链接）
+   */
+  function showResult(msg: string, ok: boolean, url?: string): void {
+    pathResult.className = `path-result ${ok ? 'ok' : 'err'}`;
+    pathResult.innerHTML = '';
+    pathResult.appendChild(document.createTextNode(msg));
+    if (ok && url) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.textContent = ` ${url}（点击前往新地址）`;
+      link.className = 'path-new-link';
+      pathResult.appendChild(link);
+    }
+  }
+
+  /** 加载当前路径 */
+  async function loadPath(): Promise<void> {
+    const res = await fetch('/api/admin/admin-path');
+    if (!res.ok) return;
+    const data = await res.json();
+    pathCurrent.textContent = data.url || `/${data.path}`;
+    pathInput.value = data.path === defaultAdminPath ? '' : data.path;
+  }
+
+  /**
+   * 提交路径修改
+   * @param value 新路径（'admin' 表示恢复默认）
+   */
+  async function savePath(value: string): Promise<void> {
+    if (!confirm('修改后台路径后，当前旧地址将立即失效（返回 404）。确定继续？')) return;
+    pathResult.textContent = '';
+    try {
+      const res = await fetch('/api/admin/admin-path', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: value }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        pathCurrent.textContent = data.url;
+        showResult(`后台路径已更新为 /${data.path}，旧地址已失效。`, true, data.url);
+      } else {
+        showResult(data.error || '修改失败', false);
+      }
+    } catch {
+      showResult('网络错误，请稍后重试', false);
+    }
+  }
+
+  document.getElementById('btnSaveAdminPath')!.addEventListener('click', () => {
+    const v = pathInput.value.trim();
+    if (!v) { showResult('请输入新的后台路径', false); return; }
+    void savePath(v);
+  });
+  document.getElementById('btnResetAdminPath')!.addEventListener('click', () => void savePath(defaultAdminPath));
+  void loadPath();
+</script>
+
+<style>
+  .settings-form { max-width: 720px; }
+  /* 安全设置面板：后台访问路径 */
+  .security-panel { max-width: 720px; }
+  .path-row { display: flex; align-items: stretch; }
+  .path-prefix {
+    display: flex; align-items: center; padding: 0 10px;
+    border: 1px solid var(--admin-border); border-right: none;
+    border-radius: 8px 0 0 8px; background: var(--admin-muted-bg, #eef0f3);
+    color: var(--admin-muted); font-family: var(--font-mono, monospace); font-size: 0.875rem;
+  }
+  .path-row input { border-radius: 0 8px 8px 0; font-family: var(--font-mono, monospace); }
+  .path-hint { font-size: 0.75rem; color: var(--admin-muted); margin-top: 6px; }
+  .path-current { font-size: 0.8125rem; margin-top: 8px; color: var(--admin-muted); }
+  .path-current code {
+    padding: 2px 8px; border-radius: 6px; background: var(--admin-muted-bg, #eef0f3);
+    font-family: var(--font-mono, monospace); color: var(--admin-text, #1a1a1a);
+  }
+  .path-result { margin-top: 10px; font-size: 0.8125rem; min-height: 1.2em; }
+  .path-result.ok { color: #15803d; }
+  .path-result.err { color: #b91c1c; }
+  .path-new-link { font-family: var(--font-mono, monospace); font-weight: 600; }
+  .fieldset {
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    background: var(--admin-bg);
+  }
+  .fieldset legend {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0 8px;
+    color: var(--admin-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .form-row { margin-bottom: 14px; }
+  .form-row label {
+    display: block; font-size: 0.8125rem; color: var(--admin-muted); margin-bottom: 4px;
+  }
+  .form-row input {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--admin-border);
+    border-radius: 8px; font-size: 0.875rem; background: var(--admin-bg);
+  }
+  .form-row input:focus { outline: none; border-color: var(--admin-primary); }
+  .form-actions { padding-left: 4px; }
+  .btn-primary {
+    padding: 10px 24px; background: var(--admin-primary); color: #fff;
+    border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 20px; background: #1a1a2e; color: #fff;
+    border-radius: 8px; font-size: 0.875rem; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    opacity: 0; transform: translateY(20px); transition: all 0.3s; z-index: 300;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+</style>
+
+<script>
+  const fields = [
+    'site_name', 'site_title', 'site_description', 'site_url', 'github_url',
+    'hero_title', 'hero_subtitle', 'hero_description',
+    'section_featured_title', 'section_other_title',
+    'footer_copyright', 'footer_year', 'footer_built_with', 'footer_built_with_url',
+  ];
+
+  async function loadSettings() {
+    const res = await fetch('/api/admin/settings');
+    const data = await res.json();
+    fields.forEach((key) => {
+      const el = document.getElementById(key) as HTMLInputElement | null;
+      if (el) el.value = data[key] ?? '';
+    });
+  }
+
+  const toast = document.getElementById('toast')!;
+
+  function showToast(msg: string) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  document.getElementById('settingsForm')!.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload: Record<string, string> = {};
+    fields.forEach((key) => {
+      const el = document.getElementById(key) as HTMLInputElement | null;
+      if (el) payload[key] = el.value;
+    });
+
+    const res = await fetch('/api/admin/settings', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      showToast('设置已保存');
+    } else {
+      const data = await res.json();
+      showToast(data.error || '保存失败');
+    }
+  });
+
+  loadSettings();
+</script>

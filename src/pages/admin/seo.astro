@@ -1,0 +1,197 @@
+---
+/**
+ * SEO 管理页
+ * 维护站点 SEO 配置：标题、描述、关键词、canonical、Open Graph 等
+ * 保存后立即影响前台 meta 标签
+ */
+import AdminLayout from '../../layouts/AdminLayout.astro';
+---
+
+<AdminLayout title="SEO 配置" active="seo">
+  <form id="seoForm" class="seo-form">
+    <fieldset class="fieldset">
+      <legend>基础 SEO</legend>
+      <!-- 页面标题（&lt;title&gt; 标签） -->
+      <div class="form-row">
+        <label>标题 (title)</label>
+        <input type="text" id="title" placeholder="站点 SEO 标题" />
+      </div>
+      <!-- meta description -->
+      <div class="form-row">
+        <label>描述 (description)</label>
+        <textarea id="description" rows="3" placeholder="一段简洁的站点描述，建议 80-160 字"></textarea>
+      </div>
+      <!-- meta keywords -->
+      <div class="form-row">
+        <label>关键词 (keywords)</label>
+        <input type="text" id="keywords" placeholder="关键词，逗号分隔" />
+      </div>
+      <!-- canonical 链接 -->
+      <div class="form-row">
+        <label>canonical 链接</label>
+        <input type="url" id="canonical" placeholder="https://" />
+      </div>
+    </fieldset>
+
+    <fieldset class="fieldset">
+      <legend>Open Graph</legend>
+      <!-- OG 标题 -->
+      <div class="form-row">
+        <label>OG 标题 (og_title)</label>
+        <input type="text" id="og_title" placeholder="社交分享标题" />
+      </div>
+      <!-- OG 描述 -->
+      <div class="form-row">
+        <label>OG 描述 (og_description)</label>
+        <textarea id="og_description" rows="3" placeholder="社交分享描述"></textarea>
+      </div>
+      <!-- OG 图片 -->
+      <div class="form-row">
+        <label>OG 图片 (og_image)</label>
+        <input type="url" id="og_image" placeholder="https://example.com/og.png" />
+      </div>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">保存配置</button>
+    </div>
+  </form>
+
+  <!-- 保存结果提示 -->
+  <div class="toast" id="toast"></div>
+</AdminLayout>
+
+<style>
+  /* 表单容器最大宽度，保持阅读舒适 */
+  .seo-form { max-width: 720px; }
+  /* 字段分组卡片 */
+  .fieldset {
+    border: 1px solid var(--admin-border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    background: var(--admin-bg);
+  }
+  .fieldset legend {
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0 8px;
+    color: var(--admin-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .form-row { margin-bottom: 14px; }
+  .form-row label {
+    display: block;
+    font-size: 0.8125rem;
+    color: var(--admin-muted);
+    margin-bottom: 4px;
+  }
+  /* 输入框与文本域统一样式 */
+  .form-row input,
+  .form-row textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--admin-border);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    background: var(--admin-bg);
+    resize: vertical;
+    font-family: inherit;
+  }
+  .form-row input:focus,
+  .form-row textarea:focus {
+    outline: none;
+    border-color: var(--admin-primary);
+  }
+  .form-actions { padding-left: 4px; }
+  /* 主按钮 */
+  .btn-primary {
+    padding: 10px 24px;
+    background: var(--admin-primary);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+  /* 保存结果 toast 提示 */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    padding: 12px 20px;
+    background: #1a1a2e;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    opacity: 0;
+    transform: translateY(20px);
+    transition: all 0.3s;
+    z-index: 300;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+</style>
+
+<script>
+  // SEO 表单字段列表，与后端白名单保持一致
+  const fields = [
+    'title', 'description', 'keywords', 'canonical',
+    'og_title', 'og_description', 'og_image',
+  ];
+
+  /**
+   * 加载当前 SEO 配置并填充表单
+   */
+  async function loadSeo(): Promise<void> {
+    const res = await fetch('/api/admin/seo');
+    const data = await res.json();
+    fields.forEach((key) => {
+      const el = document.getElementById(key) as HTMLInputElement | HTMLTextAreaElement | null;
+      if (el) el.value = data[key] ?? '';
+    });
+  }
+
+  // Toast 提示元素
+  const toast = document.getElementById('toast')!;
+
+  /**
+   * 显示 toast 提示
+   * @param msg 提示文案
+   */
+  function showToast(msg: string): void {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  }
+
+  // 监听表单提交：序列化字段后 PUT 至后端
+  document.getElementById('seoForm')!.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const payload: Record<string, string> = {};
+    fields.forEach((key) => {
+      const el = document.getElementById(key) as HTMLInputElement | HTMLTextAreaElement | null;
+      if (el) payload[key] = el.value;
+    });
+
+    const res = await fetch('/api/admin/seo', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      showToast('SEO 配置已保存');
+    } else {
+      const data = await res.json();
+      showToast(data.error || '保存失败');
+    }
+  });
+
+  // 页面初始化时加载已有配置
+  loadSeo();
+</script>

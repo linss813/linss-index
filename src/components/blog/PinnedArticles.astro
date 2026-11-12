@@ -1,0 +1,49 @@
+---
+import type { BlogArticle } from '../../types/blog';
+import { formatDateShort } from '../../lib/datetime';
+
+interface Props { articles: BlogArticle[]; defaultCover: string; }
+const { articles, defaultCover } = Astro.props;
+---
+
+{articles.length > 0 && (
+  <section class="pinned-area" aria-labelledby="pinned-title">
+    <div class="pinned-heading"><span aria-hidden="true">⌁</span><h2 id="pinned-title">置顶文章</h2><small>{articles.length}</small></div>
+    <div class="pinned-list">
+      {articles.map((article) => (
+        <article class="pinned-card">
+          <a class="pinned-cover" href={`/blog/${encodeURIComponent(article.slug)}`} tabindex="-1">
+            <img src={article.cover || article.sourceCover || defaultCover} alt="" loading="lazy" decoding="async" />
+          </a>
+          <div>
+            <span class="pin-badge">置顶</span>
+            <h3><a href={`/blog/${encodeURIComponent(article.slug)}`}>{article.title}</a></h3>
+            <p>{article.excerpt}</p>
+            <div class="pin-meta">
+              <span>来源：{article.sourceName}</span>
+              {article.publishedAt && <time datetime={article.publishedAt}>{formatDateShort(article.publishedAt)}</time>}
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  </section>
+)}
+
+<style>
+  .pinned-area { margin-bottom: 32px; padding: 18px; border: 1px solid color-mix(in srgb, var(--color-accent) 38%, var(--color-border)); border-radius: var(--radius-card); background: color-mix(in srgb, var(--color-accent) 6%, var(--color-card)); }
+  .pinned-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; color: var(--color-accent); }
+  .pinned-heading h2 { font-family: var(--font-mono); font-size: .76rem; letter-spacing: .1em; text-transform: uppercase; }
+  .pinned-heading small { padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, var(--color-accent) 15%, transparent); font-family: var(--font-mono); }
+  .pinned-list { display: grid; gap: 12px; }
+  .pinned-card { display: grid; grid-template-columns: 124px minmax(0,1fr); gap: 18px; padding: 14px; border: 1px solid var(--color-border); border-radius: calc(var(--radius-card) * .8); background: color-mix(in srgb, var(--color-card) 94%, transparent); }
+  .pinned-cover { display: grid; min-height: 96px; place-items: center; overflow: hidden; border-radius: calc(var(--radius-card) * .65); background: var(--color-background); }
+  .pinned-cover img { width: 100%; height: auto; max-height: 130px; object-fit: contain; }
+  .pin-badge { display: inline-flex; padding: 2px 7px; border-radius: 999px; background: var(--color-accent); color: var(--color-background); font-family: var(--font-mono); font-size: .62rem; }
+  h3 { margin-top: 6px; font-size: 1.18rem; letter-spacing: -.02em; }
+  h3 a:hover { color: var(--color-accent); }
+  .pinned-card p { display: -webkit-box; margin-top: 6px; overflow: hidden; color: var(--color-muted); font-size: .82rem; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .pin-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; color: var(--color-muted); font-family: var(--font-mono); font-size: .66rem; }
+  @media (max-width: 560px) { .pinned-card { grid-template-columns: 1fr; } .pinned-cover { max-height: 210px; } .pinned-cover img { max-height: 210px; } }
+</style>
+

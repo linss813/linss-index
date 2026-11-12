@@ -1,0 +1,80 @@
+---
+/**
+ * 主题切换组件（内联于 Header 使用）
+ * 点击循环切换 Light → Dark → System，通过 localStorage 记忆；
+ * 极简样式：无边框无背景，仅图标，hover 变前景色；
+ * 仅在浏览器可用时显示（JS 被禁用时按钮隐藏，回落为跟随系统）
+ */
+import Icon from './Icon.astro';
+---
+
+<button id="theme-toggle" type="button" aria-label="切换主题" title="切换主题">
+  <span class="theme-icon" data-theme-icon="light"><Icon name="sun" size={16} /></span>
+  <span class="theme-icon" data-theme-icon="dark"><Icon name="moon" size={16} /></span>
+  <span class="theme-icon" data-theme-icon="system"><Icon name="monitor" size={16} /></span>
+</button>
+
+<script>
+  // 深浅色偏好档位顺序
+  const ORDER = ['light', 'dark', 'system'] as const;
+  type Pref = (typeof ORDER)[number];
+
+  const btn = document.getElementById('theme-toggle') as HTMLButtonElement | null;
+  const mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+  /** 将偏好档位应用到 <html> 并持久化（system 时解析为实际深浅色写入 data-mode） */
+  function applyTheme(pref: Pref): void {
+    const html = document.documentElement;
+    html.dataset.themePref = pref;
+    html.dataset.mode = pref === 'system' ? (mq.matches ? 'dark' : 'light') : pref;
+    try {
+      localStorage.setItem('theme', pref);
+    } catch {
+      /* localStorage 不可用时忽略，仅本次会话生效 */
+    }
+    btn?.setAttribute('data-current', pref);
+  }
+
+  // 初始化按钮显示状态（与 Layout 中的内联脚本保持一致）
+  const initial = (document.documentElement.dataset.themePref as Pref | undefined) ?? 'system';
+  if (btn && initial) {
+    btn.setAttribute('data-current', initial);
+  }
+
+  btn?.addEventListener('click', () => {
+    const current = (document.documentElement.dataset.themePref as Pref | undefined) ?? 'system';
+    applyTheme(ORDER[(ORDER.indexOf(current) + 1) % ORDER.length]);
+  });
+</script>
+
+<style>
+  button {
+    display: none; /* JS 可用并设置 data-current 后显示 */
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: var(--color-muted);
+    transition: color var(--transition-fast);
+  }
+
+  button[data-current] {
+    display: flex;
+  }
+
+  button:hover {
+    color: var(--color-foreground);
+  }
+
+  /* 三个主题图标，仅显示当前偏好档位对应的图标 */
+  .theme-icon {
+    display: none;
+    line-height: 0;
+  }
+
+  button[data-current='light'] [data-theme-icon='light'],
+  button[data-current='dark'] [data-theme-icon='dark'],
+  button[data-current='system'] [data-theme-icon='system'] {
+    display: flex;
+  }
+</style>

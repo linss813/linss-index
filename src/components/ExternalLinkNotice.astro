@@ -1,0 +1,67 @@
+<dialog class="external-notice" id="externalNotice" aria-labelledby="externalNoticeTitle" aria-describedby="externalNoticeText">
+  <form method="dialog">
+    <span class="notice-mark" aria-hidden="true">↗</span>
+    <div>
+      <p class="notice-kicker">External link</p>
+      <h2 id="externalNoticeTitle">即将离开本站</h2>
+      <p id="externalNoticeText">你将前往第三方网站，请留意目标网址和隐私安全。</p>
+      <p class="notice-host" id="externalNoticeHost"></p>
+    </div>
+    <div class="notice-actions">
+      <button value="cancel">留在本站</button>
+      <button class="continue" id="externalNoticeContinue" value="default">继续访问</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  import { needsExternalNotice } from '../lib/link-policy';
+  const dialog = document.getElementById('externalNotice') as HTMLDialogElement;
+  const host = document.getElementById('externalNoticeHost')!;
+  const continueButton = document.getElementById('externalNoticeContinue') as HTMLButtonElement;
+  let destination: URL | null = null;
+  let openInNewTab = false;
+
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0) return;
+    const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
+    if (!link || link.dataset.noExternalWarning !== undefined || link.hasAttribute('download')) return;
+    let url: URL;
+    try { url = new URL(link.href, location.href); } catch { return; }
+    if (!needsExternalNotice(url, new URL(location.href))) return;
+    event.preventDefault();
+    destination = url;
+    openInNewTab = link.target === '_blank' || event.ctrlKey || event.metaKey || event.shiftKey;
+    host.textContent = url.hostname;
+    dialog.showModal();
+  });
+
+  continueButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    if (!destination) return;
+    const url = destination.href;
+    dialog.close();
+    if (openInNewTab) window.open(url, '_blank', 'noopener,noreferrer');
+    else location.href = url;
+  });
+
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) dialog.close();
+  });
+</script>
+
+<style>
+  dialog.external-notice { position: fixed; inset: 0; margin: auto; max-height: calc(100dvh - 32px); overflow: auto; }
+  .external-notice{width:min(440px,calc(100% - 32px));padding:0;border:1px solid var(--color-border);border-radius:16px;background:var(--color-card);color:var(--color-foreground);box-shadow:0 24px 80px rgba(0,0,0,.28)}
+  .external-notice::backdrop{background:rgba(0,0,0,.48);backdrop-filter:blur(4px)}
+  .external-notice form{display:grid;grid-template-columns:42px minmax(0,1fr);gap:16px;padding:24px}
+  .notice-mark{display:grid;width:42px;height:42px;place-items:center;border-radius:10px;background:var(--color-accent);color:var(--color-background);font-size:1.1rem}
+  .notice-kicker{margin-bottom:4px;color:var(--color-accent);font-family:var(--font-mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase}
+  .external-notice h2{font-size:1.35rem;letter-spacing:-.025em}
+  #externalNoticeText{margin-top:9px;color:var(--color-muted);font-size:.86rem;line-height:1.7}
+  .notice-host{overflow:hidden;margin-top:12px;padding:9px 11px;border:1px solid var(--color-border);border-radius:8px;font-family:var(--font-mono);font-size:.78rem;text-overflow:ellipsis;white-space:nowrap}
+  .notice-actions{display:flex;grid-column:1/-1;justify-content:flex-end;gap:9px;margin-top:5px}
+  .notice-actions button{min-height:42px;padding:8px 15px;border:1px solid var(--color-border);border-radius:8px;background:transparent;color:var(--color-foreground);font-weight:650}
+  .notice-actions .continue{border-color:var(--color-accent);background:var(--color-accent);color:var(--color-background)}
+  @media(max-width:480px){.external-notice form{grid-template-columns:34px minmax(0,1fr);padding:20px}.notice-mark{width:34px;height:34px}.notice-actions button{flex:1}}
+</style>

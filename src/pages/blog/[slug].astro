@@ -1,0 +1,394 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Comments from '../../components/Comments.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import { getArticleBySlug, getBlogDefaultCover } from '../../services/articles';
+import { formatDateShort } from '../../lib/datetime';
+import { getSiteConfig } from '../../lib/queries';
+
+const rawSlug = Astro.params.slug ?? '';
+const slug = (() => {
+  try { return decodeURIComponent(rawSlug); } catch { return rawSlug; }
+})();
+const article = Astro.props.article ?? getArticleBySlug(slug);
+const preview=Astro.props.preview===true;
+if (!article) {
+  return Astro.redirect('/blog', 302);
+}
+const cover = article.cover || article.sourceCover || getBlogDefaultCover();
+const site = getSiteConfig();
+const minutes = Math.max(1, Math.ceil(article.contentHtml.replace(/<[^>]*>/g, '').length / 450));
+---
+
+<Layout title={`${article.title} | ${site.name}`} description={article.excerpt || article.contentHtml.replace(/<[^>]*>/g, '').slice(0,160)} noindex={preview} image={cover} articleMeta={{title:article.title, author:article.author, publishedAt:article.publishedAt, updatedAt:article.sourceUpdatedAt || article.updatedAt || article.publishedAt}}>
+  <Header />
+  <main class="article-shell">{preview&&<p class="container preview-note">草稿预览 · 仅管理员可见，尚未更新公开文章</p>}
+    <article>
+      <header class="article-head container">
+        <a class="back-link" href="/blog"><span aria-hidden="true">←</span> 返回文章列表</a>
+        <h1>{article.title}</h1>
+        <div class="article-meta">
+          <span>{minutes} 分钟阅读</span>
+          {article.author && <span>By {article.author}</span>}
+          {article.publishedAt && <time datetime={article.publishedAt}>{formatDateShort(article.publishedAt)}</time>}
+          <span class="source-mark">来源：{article.sourceName}</span>
+          {(article.categories.length > 0 ? article.categories : ['文章'])
+            .map((category:string) => <span class="article-tag">{category}</span>)}
+        </div>
+        <p class="article-lead">{article.excerpt}</p>
+      </header>
+
+      {(article.cover || article.sourceCover) && <figure class="article-cover container">
+          <img
+            src={cover}
+            alt=""
+            decoding="async"
+            referrerpolicy="no-referrer"
+            data-article-image
+          />
+          <div class="image-error" hidden>封面图片暂时无法显示</div>
+      </figure>}
+
+      <div class="reading-layout"><aside class="reading-toc" aria-label="文章目录"><strong>本文目录</strong><nav id="article-toc"></nav></aside><div class="article-content" set:html={article.contentHtml} /></div>
+
+      {!preview&&<Comments articleId={article.id}/>}
+      <footer class="article-footer">
+        <span>来源：{article.sourceName}</span>
+        <a href={article.url.startsWith('/blog/') ? '/blog' : article.url} target={article.url.startsWith('/blog/') ? '_self' : '_blank'} rel="noopener noreferrer">
+          {article.url.startsWith('/blog/') ? '继续阅读其他文章' : '查看原文'} <span aria-hidden="true">↗</span>
+        </a>
+      </footer>
+    </article>
+  </main>
+  <Footer />
+</Layout>
+
+<script>
+import { renderHeadingTree } from '../../lib/heading-tree';
+const shell = document.querySelector<HTMLElement>('.article-shell')!;
+const widthButton = document.createElement('button');
+widthButton.className = 'reading-width';
+widthButton.textContent = '宽屏阅读';
+widthButton.type = 'button';
+document.querySelector('.article-head')?.prepend(widthButton);
+function setWide(wide: boolean) {
+  shell.classList.toggle('reading-wide', wide);
+  widthButton.textContent = wide ? '标准宽度' : '宽屏阅读';
+  widthButton.setAttribute('aria-pressed', String(wide));
+}
+try {
+  setWide(localStorage.getItem('reading-wide') === 'true');
+} catch {}
+widthButton.onclick = () => {
+  const wide = !shell.classList.contains('reading-wide');
+  setWide(wide);
+  try {
+    localStorage.setItem('reading-wide', String(wide));
+  } catch {}
+};
+const toc = document.getElementById('article-toc');
+document
+  .querySelectorAll<HTMLElement>('.article-content h2,.article-content h3')
+  .forEach((heading, index) => {
+    heading.id = `section-${index}`;
+  });
+const headings = Array.from(
+  document.querySelectorAll<HTMLElement>(
+    '.article-content h1,.article-content h2,.article-content h3',
+  ),
+);
+if (toc)
+  renderHeadingTree(toc, headings, (index) =>
+    headings[index].scrollIntoView({ block: 'start', behavior: 'smooth' }),
+  );
+function replaceBrokenImage(
+  image: HTMLImageElement,
+  message = '图片暂时无法显示',
+) {
+  const placeholder = document.createElement('div');
+  placeholder.className = 'article-image-error';
+  placeholder.textContent = message;
+  image.replaceWith(placeholder);
+}
+
+document
+  .querySelectorAll<HTMLImageElement>('.article-content img')
+  .forEach((image) => {
+    image.addEventListener('error', () => replaceBrokenImage(image), {
+      once: true,
+    });
+    if (image.complete && image.naturalWidth === 0) replaceBrokenImage(image);
+  });
+
+document
+  .querySelectorAll<HTMLImageElement>('[data-article-image]')
+  .forEach((image) => {
+    image.addEventListener(
+      'error',
+      () => {
+        image.hidden = true;
+        const error =
+          image.parentElement?.querySelector<HTMLElement>('.image-error');
+        if (error) error.hidden = false;
+      },
+      { once: true },
+    );
+  });
+
+document.querySelectorAll<HTMLElement>('[data-code-block]').forEach((block) => {
+  const copy = block.querySelector<HTMLButtonElement>('[data-code-copy]');
+  const toggle = block.querySelector<HTMLButtonElement>('[data-code-toggle]');
+  copy?.addEventListener('click', async () => {
+    const code = block.querySelector('code')?.textContent ?? '';
+    try {
+      await navigator.clipboard.writeText(code);
+      copy.textContent = '已复制';
+      setTimeout(() => {
+        copy.textContent = '复制';
+      }, 1600);
+    } catch {
+      copy.textContent = '复制失败';
+    }
+  });
+  toggle?.addEventListener('click', () => {
+    const collapsed = block.classList.toggle('is-collapsed');
+    toggle.textContent = collapsed ? '展开' : '折叠';
+    toggle.setAttribute('aria-expanded', String(!collapsed));
+  });
+});
+</script>
+
+<style>
+  .article-shell {
+    padding: clamp(64px, 10vw, 120px) 0 calc(var(--space-section) * 0.65);
+  }
+
+  .article-head {
+    max-width: 920px;
+    text-align: left;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 30px;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    transition: color var(--transition-fast);
+  }
+  .back-link:hover { color: var(--color-accent); }
+
+  h1 {
+    max-width: 17ch;
+    margin-inline: 0;
+    font-size: clamp(2.35rem, 7vw, 5.2rem);
+    font-weight: 750;
+    letter-spacing: -0.05em;
+    line-height: 1.04;
+    overflow-wrap: anywhere;
+  }
+
+  .article-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 9px 14px;
+    flex-wrap: wrap;
+    margin-top: 26px;
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .article-tag {
+    padding: 3px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    text-transform: none;
+  }
+  .source-mark { color: var(--color-foreground); font-weight: 650; }
+
+  .article-lead {
+    max-width: 60ch;
+    margin: 26px 0 0;
+    padding-left: 18px;
+    border-left: 2px solid var(--color-accent);
+    color: var(--color-muted);
+    font-size: clamp(1rem, 2vw, 1.12rem);
+    line-height: 1.75;
+  }
+
+  .article-cover {
+    display: grid;
+    max-width: 1080px;
+    place-items: center;
+    margin-top: clamp(42px, 7vw, 76px);
+  }
+
+  .article-cover img {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: min(76vh, 820px);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .image-error,
+  :global(.article-image-error) {
+    display: grid;
+    width: 100%;
+    min-height: 180px;
+    place-items: center;
+    border: 1px dashed var(--color-border-strong);
+    border-radius: var(--radius-card);
+    color: var(--color-muted);
+    background: color-mix(in srgb, var(--color-card) 75%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+  .image-error[hidden] { display: none; }
+
+  .article-content {
+    width: min(100% - 32px, 720px);
+    margin: clamp(48px, 7vw, 78px) auto 0;
+    font-size: clamp(1rem, 1.5vw, 1.075rem);
+    line-height: 1.86;
+    overflow-wrap: anywhere;
+  }
+
+  .article-content :global(> * + *) { margin-top: 1.35em; }
+  .article-content :global(h1),
+  .article-content :global(h2),
+  .article-content :global(h3),
+  .article-content :global(h4),
+  .article-content :global(h5),
+  .article-content :global(h6) {
+    margin-top: 2.2em;
+    color: var(--color-foreground);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.28;
+    scroll-margin-top: 24px;
+  }
+  .article-content :global(h1) { font-size: 2rem; }
+  .article-content :global(h2) { font-size: 1.65rem; }
+  .article-content :global(h3) { font-size: 1.35rem; }
+  .article-content :global(h4),
+  .article-content :global(h5),
+  .article-content :global(h6) { font-size: 1.1rem; }
+
+  .article-content :global(p) { color: color-mix(in srgb, var(--color-foreground) 88%, var(--color-muted)); }
+  .article-content :global(a) {
+    color: var(--color-accent);
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
+    text-underline-offset: 0.2em;
+  }
+  .article-content :global(strong) { color: var(--color-foreground); font-weight: 700; }
+  .article-content :global(ul),
+  .article-content :global(ol) { padding-left: 1.45em; }
+  .article-content :global(li + li) { margin-top: 0.45em; }
+  .article-content :global(blockquote) {
+    padding: 0.15em 0 0.15em 1.25em;
+    border-left: 3px solid var(--color-accent);
+    color: var(--color-muted);
+    font-style: italic;
+  }
+  .article-content :global(hr) {
+    height: 1px;
+    margin-block: 2.5em;
+    border: 0;
+    background: var(--color-border);
+  }
+  .article-content :global(pre) {
+    max-width: 100%;
+    padding: 20px;
+    overflow-x: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+    background: color-mix(in srgb, var(--color-foreground) 6%, var(--color-background));
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+    line-height: 1.65;
+    tab-size: 2;
+  }
+  .article-content :global(:not(pre) > code),
+  .article-content :global(kbd) {
+    padding: 0.15em 0.4em;
+    border: 1px solid var(--color-border);
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--color-foreground) 6%, transparent);
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+  }
+  .article-content :global(img) {
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    margin: 2em auto;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+  .article-content :global(video), .article-content :global(audio) { display: block; width: 100%; max-width: 100%; height: auto; margin: 2em auto; border-radius: var(--radius-card); }
+  .article-content :global(figure) { max-width: 100%; margin-block: 2em; }
+  .article-content :global(figcaption) {
+    margin-top: 0.7em;
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    text-align: center;
+  }
+  .article-content :global(table) {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  .article-content :global(th),
+  .article-content :global(td) {
+    min-width: 110px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    text-align: left;
+  }
+  .article-content :global(th) { background: color-mix(in srgb, var(--color-foreground) 5%, transparent); }
+  .article-content :global(details) {
+    padding: 14px 16px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-card);
+  }
+  .article-content :global(summary) { cursor: pointer; font-weight: 650; }
+
+  .article-footer {
+    display: flex;
+    width: min(100% - 32px, 720px);
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin: clamp(56px, 8vw, 90px) auto 0;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-muted);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+  }
+  .article-footer a { color: var(--color-accent); }
+
+  @media (max-width: 640px) {
+    .article-shell { padding-top: 52px; }
+    .article-head { text-align: left; }
+    h1 { max-width: none; margin-inline: 0; }
+    .article-meta { justify-content: flex-start; }
+    .article-lead { margin-inline: 0; }
+    .article-cover { margin-top: 40px; }
+    .article-content { line-height: 1.8; }
+    .article-content :global(pre) { padding: 16px; font-size: 0.78rem; }
+    .article-footer { align-items: flex-start; flex-direction: column; }
+  }
+</style>

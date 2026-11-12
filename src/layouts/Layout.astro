@@ -1,0 +1,123 @@
+---
+/**
+ * 全局布局组件
+ * 负责 HTML 骨架、SEO Meta、Open Graph、favicon、
+ * Design Token 注入与主题（深浅色）初始化
+ * @param title 页面标题（默认取站点配置）
+ * @param description 页面描述（默认取站点配置）
+ */
+import '../styles/global.css';
+import '../styles/journal.css';
+import '../styles/code-blocks.css';
+import '../styles/toc.css';
+import '../styles/magazine.css';
+import DesignTokens from '../components/DesignTokens.astro';
+import Background from '../components/Background.astro';
+import { canonicalUrl, serializeJsonLd, isoDate } from '../lib/seo';
+import ExternalLinkNotice from '../components/ExternalLinkNotice.astro';
+import { getSiteConfig, getAppearance, getSeo } from '../lib/queries';
+
+const siteConfig = getSiteConfig();
+const appearance = getAppearance();
+const seo = getSeo();
+
+const {
+  title: providedTitle,
+  description: providedDescription,
+  /** 搜索引擎屏蔽标记（404 等页面传 true 输出 noindex） */
+  noindex: requestedNoindex = false,
+  image: providedImage,
+  articleMeta,
+} = Astro.props;
+const noindex = requestedNoindex || Boolean(Astro.url.searchParams.get('q')?.trim());
+if (noindex) Astro.response.headers.set('X-Robots-Tag', 'noindex, follow');
+const usesGlobalSeo = providedTitle == null && providedDescription == null;
+const title = providedTitle ?? (seo.title || siteConfig.title);
+const description = providedDescription ?? (seo.description || siteConfig.description);
+
+function absoluteUrl(value: string | undefined, base: string): URL | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value, base);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+// The configured canonical describes the homepage. Inner pages retain their
+// own path so a global setting cannot accidentally canonicalize the whole site
+// to `/`.
+const configuredCanonical = Astro.url.pathname === '/' ? absoluteUrl(seo.canonical, siteConfig.url) : null;
+const canonical = configuredCanonical ?? canonicalUrl(Astro.url, siteConfig.url);
+const ogTitle = usesGlobalSeo && seo.og_title ? seo.og_title : title;
+const ogDescription = usesGlobalSeo && seo.og_description ? seo.og_description : description;
+const ogImage = absoluteUrl(providedImage || seo.og_image || '/images/blog-default-cover.svg', siteConfig.url);
+
+const origin = new URL('/', siteConfig.url).href;
+const graph: Record<string,unknown>[] = [
+  { '@type':'WebSite', '@id':origin+'#website', url:origin, name:siteConfig.name, description:seo.description || siteConfig.description, inLanguage:'zh-CN' },
+  { '@type':articleMeta ? 'BlogPosting' : 'WebPage', '@id':canonical.href+'#page', url:canonical.href, name:title, description, inLanguage:'zh-CN', isPartOf:{'@id':origin+'#website'}, ...(articleMeta ? {
+    headline:articleMeta.title, mainEntityOfPage:canonical.href,
+    datePublished:isoDate(articleMeta.publishedAt), dateModified:isoDate(articleMeta.updatedAt || articleMeta.publishedAt),
+    author:articleMeta.author ? {'@type':'Person',name:articleMeta.author} : undefined,
+    image:ogImage ? [ogImage.href] : undefined,
+  } : {}) },
+];
+if (Astro.url.pathname !== '/') graph.push({ '@type':'BreadcrumbList', itemListElement:[
+  {'@type':'ListItem',position:1,name:'首页',item:origin},
+  ...(articleMeta ? [{'@type':'ListItem',position:2,name:'文章',item:new URL('/blog',origin).href},{'@type':'ListItem',position:3,name:articleMeta.title,item:canonical.href}] : [{'@type':'ListItem',position:2,name:title.split('|')[0].trim(),item:canonical.href}]),
+] });
+
+/** 生成主题初始化内联脚本：渲染前恢复深浅色偏好，避免闪烁 */
+function themeScript(defaultMode: string): string {
+  return `(function(){var DEFAULT='${defaultMode}';var html=document.documentElement;var saved=null;try{saved=localStorage.getItem('theme')}catch(e){}var pref=(saved==='light'||saved==='dark')?saved:DEFAULT;function resolve(p){return p==='system'?(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):p}try{html.dataset.style=localStorage.getItem('blog-style')==='classic'?'classic':'magazine'}catch(e){html.dataset.style='magazine'}html.dataset.themePref=pref;html.dataset.mode=resolve(pref);var mq=window.matchMedia('(prefers-color-scheme: dark)');mq.addEventListener('change',function(){if((html.dataset.themePref||'system')==='system'){html.dataset.mode=resolve('system')}});})();`;
+}
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {seo.keywords && <meta name="keywords" content={seo.keywords} />}
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="canonical" href={canonical} />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={articleMeta ? 'article' : 'website'} />
+    <meta property="og:locale" content="zh_CN" />
+    {articleMeta?.publishedAt && <meta property="article:published_time" content={isoDate(articleMeta.publishedAt)} />}
+    {articleMeta?.updatedAt && <meta property="article:modified_time" content={isoDate(articleMeta.updatedAt)} />}
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={ogTitle} />
+    <meta property="og:description" content={ogDescription} />
+    <meta property="og:site_name" content={siteConfig.name} />
+    {ogImage && <meta property="og:image" content={ogImage} />}
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content={ogImage ? 'summary_large_image' : 'summary'} />
+    <meta name="twitter:title" content={ogTitle} />
+    <meta name="twitter:description" content={ogDescription} />
+    {ogImage && <meta name="twitter:image" content={ogImage} />}
+
+    {!noindex && <script is:inline type="application/ld+json" set:html={serializeJsonLd({'@context':'https://schema.org','@graph':graph})} />}
+
+    <!-- Design Tokens（构建时根据主题与外观配置生成） -->
+    <DesignTokens />
+
+    <!-- 主题初始化：system / light / dark，跟随系统时监听系统偏好变化 -->
+    <script is:inline set:html={themeScript(appearance.themeMode)} />
+  </head>
+  <body>
+    <!-- 背景层：壁纸 / 遮罩 / 模糊 / 装饰效果，与前景分离 -->
+    <Background />
+    <slot />
+    <ExternalLinkNotice />
+  </body>
+</html>

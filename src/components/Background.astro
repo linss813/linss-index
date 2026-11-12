@@ -1,0 +1,96 @@
+---
+/**
+ * 全局背景层
+ * 根据 appearance.background 渲染纯色 / 图片 / 渐变壁纸、遮罩与模糊，
+ * 以及 effects 中开启的装饰效果；fixed 定位与前景完全分离
+ */
+import { getAppearance } from '../lib/queries';
+
+const appearance = getAppearance();
+
+const { background: bg, effects } = appearance;
+
+/** 是否渲染各背景层 */
+const showColor = bg.type === 'color' && bg.value !== '';
+const showImage = bg.type === 'image' && bg.value !== '';
+const showGradient = bg.type === 'gradient' && bg.value !== '';
+
+/** 壁纸显示模式 → background-size / repeat 映射 */
+const sizeCss =
+  bg.size === 'repeat'
+    ? 'background-size: auto; background-repeat: repeat;'
+    : `background-size: ${bg.size}; background-repeat: no-repeat;`;
+
+/** 模糊大于 0 时轻微放大，避免模糊边缘露白 */
+const blur = bg.blur ?? 0;
+const scale = blur > 0 ? 1.08 : 1;
+---
+
+<div class="bg-layer" aria-hidden="true">
+  {
+    showImage && (
+      <div
+        class="bg-wallpaper"
+        style={`background-image: url('${bg.value}'); background-position: ${bg.position}; ${sizeCss} filter: blur(${blur}px); transform: scale(${scale});`}
+      />
+    )
+  }
+  {showGradient && <div class="bg-flat" style={`background-image: ${bg.value}`} />}
+  {showColor && <div class="bg-flat" style={`background-color: ${bg.value}`} />}
+  {
+    bg.overlay.enabled && (
+      <div
+        class="bg-overlay"
+        style={`background-color: ${bg.overlay.color}; opacity: ${bg.overlay.opacity};`}
+      />
+    )
+  }
+  {effects.backgroundGlow && <div class="bg-glow" />}
+  {effects.grid && <div class="bg-grid" />}
+  {effects.noise && <div class="bg-noise" />}
+</div>
+
+<style>
+  .bg-layer {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .bg-layer > div {
+    position: absolute;
+    inset: 0;
+  }
+
+  .bg-wallpaper {
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .bg-overlay {
+    pointer-events: none;
+  }
+
+  /* 顶部轻微光晕（跟随主题 accent） */
+  .bg-glow {
+    background: radial-gradient(ellipse 70% 45% at 50% -5%, var(--color-glow), transparent 70%);
+  }
+
+  /* 轻网格（渐隐处理，不影响可读性） */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, var(--bg-grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--bg-grid-line) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: linear-gradient(to bottom, black 55%, transparent);
+    mask-image: linear-gradient(to bottom, black 55%, transparent);
+  }
+
+  /* 轻噪点（SVG data-uri，无额外请求） */
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+    opacity: 0.035;
+  }
+</style>

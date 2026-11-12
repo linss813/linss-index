@@ -1,0 +1,95 @@
+---
+/**
+ * 页脚（Editorial 风格）
+ * 顶部 hairline，三段式：左侧纯文字导航链接、右侧构建说明与版权；
+ * 全部使用 mono 小字，链接来自 links.ts 的 footerLinks
+ */
+import { getSiteConfig, getNavigation } from '../lib/queries';
+
+const siteConfig = getSiteConfig();
+const footerLinks = getNavigation('footer');
+const { footer } = siteConfig;
+---
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <nav class="footer-nav" aria-label="页脚导航">
+      {
+        footerLinks.map((link) => (
+          <a
+            href={link.url}
+            class="footer-link"
+            target={link.external ? '_blank' : undefined}
+            rel={link.external ? 'noopener noreferrer' : undefined}
+          >
+            {link.name}
+          </a>
+        ))
+      }
+    </nav>
+    <p class="footer-meta">
+      <a class="footer-built" href={footer.builtWithUrl} target="_blank" rel="noopener noreferrer">
+        {footer.builtWith}
+      </a>
+      <span class="footer-sep" aria-hidden="true">·</span>
+      <span>© {footer.year} {footer.copyright}</span>
+    </p>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    margin-top: calc(var(--space-section) * 0.4);
+    border-top: 1px solid var(--color-border);
+    padding: 32px 0 48px;
+  }
+
+  .footer-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    color: var(--color-muted);
+  }
+
+  .footer-nav {
+    display: flex;
+    gap: 24px;
+  }
+
+  .footer-link {
+    letter-spacing: 0.04em;
+    transition: color var(--transition-fast);
+  }
+
+  .footer-link:hover {
+    color: var(--color-foreground);
+  }
+
+  .footer-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: 0.02em;
+  }
+
+  .footer-built {
+    transition: color var(--transition-fast);
+  }
+
+  .footer-built:hover {
+    color: var(--color-foreground);
+  }
+
+  /* 手机端：导航与版权上下堆叠，保持呼吸感 */
+  @media (max-width: 640px) {
+    .footer-inner {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+  }
+</style>

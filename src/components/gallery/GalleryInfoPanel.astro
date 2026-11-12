@@ -1,0 +1,156 @@
+---
+/**
+ * Gallery 信息面板（与 Lightbox 解耦，§34）
+ * 职责：展示 API 允许公开的 EXIF metadata 与图片基本信息
+ * 数据只读渲染，不做任何推断；敏感字段由 API 层保证不下发
+ */
+import type { GalleryItem } from '../../types/gallery';
+import { METADATA_LABELS } from '../../types/gallery';
+
+interface Props {
+  /** 当前照片数据 */
+  item: GalleryItem;
+}
+
+const { item } = Astro.props;
+const meta = item.metadata ?? {};
+/** 按固定顺序取允许展示的 EXIF 字段 */
+const metaEntries = (
+  ['camera', 'lens', 'focalLength', 'aperture', 'shutterSpeed', 'iso', 'takenAt'] as const
+)
+  .filter((k) => meta[k] !== undefined)
+  .map((k) => [METADATA_LABELS[k], String(meta[k])] as const);
+/**
+ * 计算宽高比标签（最大公约数简化；非标准比例回退小数 x:1）
+ * @param w 宽度
+ * @param h 高度
+ * @returns 形如 "3 : 2" 的标签
+ */
+const ratioLabel = (w: number, h: number): string => {
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const g = gcd(w, h);
+  const rw = w / g;
+  const rh = h / g;
+  return rw > 20 || rh > 20 ? `${(w / h).toFixed(2)} : 1` : `${rw} : ${rh}`;
+};
+/** 基本信息：尺寸 / 宽高比 / 文件大小 / 格式 / 日期（尺寸大小是否公开由配置过滤，API 已保证） */
+const infoEntries: [string, string][] = [];
+if (item.width && item.height) {
+  infoEntries.push(['Dimensions', `${item.width} × ${item.height}`]);
+  infoEntries.push(['Aspect Ratio', ratioLabel(item.width, item.height)]);
+}
+if (item.fileSize) infoEntries.push(['File Size', item.fileSize < 1024 * 1024 ? `${(item.fileSize / 1024).toFixed(1)} KB` : `${(item.fileSize / 1024 / 1024).toFixed(2)} MB`]);
+if (item.mimeType) infoEntries.push(['Format', item.mimeType.replace('image/', '').toUpperCase()]);
+if (item.date) infoEntries.push(['Date', item.date]);
+---
+
+<div class="info-panel" id="galleryInfoPanel" hidden>
+  <h3 class="info-title">Image Information</h3>
+  <!-- 标题 / 描述：持久化展示头部（容器常驻，内容为空时 CSS 自动隐藏；JS 切换照片时同步更新） -->
+  <div class="info-heading" id="infoHeading">
+    <p class="info-photo-title" id="infoPhotoTitle">{item.title ?? ''}</p>
+    <p class="info-photo-desc" id="infoPhotoDesc">{item.description ?? ''}</p>
+  </div>
+  {
+    metaEntries.length === 0 && infoEntries.length === 0 && !(item.title || item.description) ? (
+      <p class="info-empty">No metadata available.</p>
+    ) : (
+      <dl class="info-list">
+        {infoEntries.map(([label, value]) => (
+          <div class="info-row">
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+        {metaEntries.map(([label, value]) => (
+          <div class="info-row">
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    )
+  }
+</div>
+
+<style>
+  /*
+    定位样式必须写在本组件内：scoped 样式只匹配本组件渲染的元素，
+    父组件（GalleryViewer）中的 #galleryInfoPanel 规则无法命中此元素，导致面板无定位、被遮挡。
+    桌面：右侧浮动（top:60px 避开顶部操作条）；移动端：底部抽屉（见下方媒体查询）。
+  */
+  .info-panel {
+    position: absolute;
+    top: 60px;
+    right: 16px;
+    z-index: 6;
+    /* 50% 透明背景 + 毛玻璃模糊：降低不透明度的同时通过 backdrop-filter 保证文字可读性 */
+    background: rgba(18, 18, 20, 0.5);
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    color: rgba(255, 255, 255, 0.92);
+    padding: 12px 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    width: min(480px, calc(100vw - 32px));
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+  }
+  /* 移动端：信息面板改为底部抽屉 */
+  @media (max-width: 640px) {
+    .info-panel {
+      top: auto;
+      bottom: 0;
+      right: 0;
+      left: 0;
+      width: 100%;
+      max-width: 100%;
+      max-height: 46vh;
+      border-radius: 12px 12px 0 0;
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+    }
+  }
+  .info-title {
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+  }
+  .info-empty { font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); }
+  /* 标题 / 描述持久化头部（跨两列独占一行） */
+  .info-heading { margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+  .info-heading:empty { display: none; margin: 0; padding: 0; border: none; }
+  .info-photo-title, .info-photo-desc { margin: 0; }
+  .info-photo-title:empty, .info-photo-desc:empty { display: none; }
+  .info-photo-title { font-size: 0.9375rem; font-weight: 700; color: #fff; }
+  .info-photo-title:not(:empty) + .info-photo-desc { margin-top: 4px; }
+  .info-photo-desc { font-size: 0.75rem; line-height: 1.5; color: rgba(255, 255, 255, 0.65); overflow-wrap: anywhere; }
+  /* 三列网格：进一步压缩纵向高度，避免面板过长遮挡右侧「下一张」导航按钮 */
+  .info-list {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 14px;
+  }
+  .info-row { min-width: 0; }
+  .info-row dt {
+    font-family: var(--font-mono);
+    font-size: 0.5625rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.45);
+  }
+  .info-row dd {
+    margin: 1px 0 0;
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
+  }
+  /* 中窄屏：两列过渡 */
+  @media (max-width: 520px) {
+    .info-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  /* 窄屏（移动端抽屉内）：单列，保证长值可读 */
+  @media (max-width: 400px) {
+    .info-list { grid-template-columns: 1fr; }
+  }
+</style>

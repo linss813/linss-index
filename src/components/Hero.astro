@@ -1,0 +1,76 @@
+---
+/**
+ * Hero 区域（Editorial 风格）
+ * 左对齐巨大标题（末尾 accent 句点）+ lead 段落，
+ * 通过字号对比与留白建立个人品牌感，不使用头像 / 按钮 / 卡片
+ * 文案来自 site.ts
+ */
+import { getSiteConfig } from '../lib/queries';
+import QuickLinks from './QuickLinks.astro';
+
+const siteConfig = getSiteConfig();
+---
+
+<section class="hero">
+  <div class="container">
+    <h1 class="hero-title">
+      {siteConfig.hero.title}<span class="hero-dot">.</span>
+    </h1>
+    <p class="hero-lead">
+      <span class="lead-strong">{siteConfig.hero.subtitle}</span>
+      <span class="lead-sep" aria-hidden="true">—</span>
+      {siteConfig.hero.description}
+    </p>
+    <QuickLinks />
+  </div>
+</section>
+
+<style>
+  .hero {
+    padding: var(--hero-pad-top) 0 var(--hero-pad-bottom);
+  }
+
+  /* 巨大标题：强字重 + 负字距，形成页面视觉重心 */
+  .hero-title {
+    font-family: var(--font-heading);
+    font-size: clamp(3.25rem, 9vw, 6.5rem);
+    font-weight: 700;
+    letter-spacing: -0.045em;
+    line-height: 1.02;
+  }
+
+  /* accent 句点：全页极少数彩色点睛之一 */
+  .hero-dot {
+    color: var(--color-accent);
+  }
+
+  .hero-lead {
+    margin-top: 28px;
+    max-width: 34em;
+    font-size: clamp(1.0625rem, 2vw, 1.25rem);
+    line-height: 1.55;
+    color: var(--color-muted);
+  }
+
+  .lead-strong {
+    color: var(--color-foreground);
+    font-weight: 500;
+  }
+
+  .lead-sep {
+    margin-inline: 10px;
+    color: var(--color-border-strong);
+  }
+
+  /* 手机端收窄留白，保持节奏但避免过度空旷 */
+  @media (max-width: 640px) {
+    .hero {
+      padding-top: 96px;
+      padding-bottom: 64px;
+    }
+
+    .hero-lead {
+      margin-top: 20px;
+    }
+  }
+</style>

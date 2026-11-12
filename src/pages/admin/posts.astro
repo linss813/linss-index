@@ -1,0 +1,238 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import { adminUrl } from '../../lib/admin-path';
+---
+<AdminLayout title="文章管理" active="posts">
+  <div class="content-hub" data-write-url={adminUrl('/write')}>
+    <header class="hub-header"><div><p class="eyebrow">CONTENT / JOURNAL</p><h2>让每一篇文章，都井然有序。</h2><p class="intro">从灵感草稿到正式发布，在这里管理你的全部原创内容。</p></div><a class="primary" href={adminUrl('/write')}>＋ 撰写文章</a></header>
+    <div class="metrics" id="metrics"></div>
+    <section class="library"><div class="library-top"><nav aria-label="文章状态" id="tabs"><button class="active" data-status="all">全部文章</button><button data-status="published">已发布</button><button data-status="draft">草稿箱</button><button data-status="trash">回收站</button></nav><span id="total"></span></div>
+    <div class="filters"><input id="search" type="search" aria-label="搜索文章" placeholder="搜索标题、摘要或标签…" /><select id="tag" aria-label="标签筛选"><option value="">全部标签</option></select><select id="sort" aria-label="排序"><option value="updated">最近更新</option><option value="created">最近创建</option><option value="title">标题排序</option></select></div>
+    <div class="batch"><span id="selected-count">已选 0 篇</span><button data-batch="publish">发布</button><button data-batch="draft">转为草稿</button><button data-batch="pin">置顶</button><button data-batch="unpin">取消置顶</button><button data-batch="trash" class="danger">移入回收站</button><button data-batch="restore" hidden>恢复为草稿</button></div>
+    <div class="table-scroll"><table><thead><tr><th><input id="select-all" type="checkbox" aria-label="全选本页" /></th><th>文章</th><th>状态</th><th>标签</th><th>最近更新</th><th class="actions-head">操作</th></tr></thead><tbody id="rows"></tbody></table></div>
+    <div id="empty" hidden><span>✎</span><h3>这里还没有文章</h3><p>换个筛选条件，或写下你的第一篇文章。</p><a href={adminUrl('/write')}>开始写作 →</a></div>
+    <footer class="pagination"><span id="page-info"></span><div><button id="prev" aria-label="上一页">←</button><span id="page"></span><button id="next" aria-label="下一页">→</button></div></footer></section>
+    <p id="feedback" role="status" aria-live="polite"></p>
+  </div>
+</AdminLayout>
+<script>
+type Post = {
+  id: number;
+  title: string;
+  slug: string;
+  summary: string;
+  tagsJson: string;
+  visible: number;
+  pinned: number;
+  deletedAt: string | null;
+  updatedAt: string;
+  createdAt: string;
+  coverUrl: string | null;
+};
+const $ = (id: string) => document.getElementById(id)!;
+const esc = (s: string) =>
+  s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ]!,
+  );
+const tags = (p: Post): string[] => {
+  try {
+    return JSON.parse(p.tagsJson);
+  } catch {
+    return [];
+  }
+};
+let posts: Post[] = [],
+  status = 'all',
+  page = 1,
+  busy = false;
+const selected = new Set<number>();
+const write =
+  document.querySelector<HTMLElement>('.content-hub')!.dataset.writeUrl!;
+function selection() {
+  $('selected-count').textContent = `已选 ${selected.size} 篇`;
+  document.querySelectorAll<HTMLButtonElement>('[data-batch]').forEach((b) => {
+    b.disabled = busy || !selected.size;
+    b.hidden =
+      status === 'trash'
+        ? b.dataset.batch !== 'restore'
+        : b.dataset.batch === 'restore';
+  });
+  const boxes = Array.from(
+    document.querySelectorAll<HTMLInputElement>('.select-row'),
+  );
+  const all = $('select-all') as HTMLInputElement;
+  all.checked = boxes.length > 0 && boxes.every((b) => b.checked);
+  all.indeterminate = boxes.some((b) => b.checked) && !all.checked;
+}
+function render() {
+  const active = posts.filter((p) => !p.deletedAt),
+    published = active.filter((p) => p.visible),
+    draft = active.filter((p) => !p.visible),
+    trash = posts.filter((p) => p.deletedAt);
+  $('metrics').innerHTML = [
+    ['全部文章', active.length, '你的内容资产'],
+    ['已发布', published.length, '正在与读者见面'],
+    ['草稿箱', draft.length, '好想法值得打磨'],
+    ['回收站', trash.length, '可随时恢复'],
+  ]
+    .map(
+      ([title, n, caption]) =>
+        `<article><span>${title}</span><strong>${n}</strong><small>${caption}</small></article>`,
+    )
+    .join('');
+  const q = ($('search') as HTMLInputElement).value.trim().toLowerCase(),
+    tag = ($('tag') as HTMLSelectElement).value,
+    sort = ($('sort') as HTMLSelectElement).value;
+  const filtered = posts
+    .filter(
+      (p) =>
+        (status === 'trash'
+          ? !!p.deletedAt
+          : !p.deletedAt &&
+            (status === 'all' ||
+              (status === 'published' ? !!p.visible : !p.visible))) &&
+        (!q ||
+          `${p.title} ${p.summary} ${tags(p).join(' ')}`
+            .toLowerCase()
+            .includes(q)) &&
+        (!tag || tags(p).includes(tag)),
+    )
+    .sort((a, b) =>
+      sort === 'title'
+        ? a.title.localeCompare(b.title, 'zh-CN')
+        : sort === 'created'
+          ? b.createdAt.localeCompare(a.createdAt)
+          : b.updatedAt.localeCompare(a.updatedAt),
+    );
+  const pages = Math.max(1, Math.ceil(filtered.length / 10));
+  page = Math.min(page, pages);
+  selected.clear();
+  const current = filtered.slice((page - 1) * 10, page * 10);
+  $('rows').innerHTML = current
+    .map(
+      (p) =>
+        `<tr><td><input class="select-row" type="checkbox" data-id="${p.id}" aria-label="选择 ${esc(p.title)}" /></td><td><div class="title-cell"><span class="article-mark">${p.pinned ? '↑' : '文'}</span><div><a href="${write}?id=${p.id}">${esc(p.title)}</a><p>${esc(p.summary || '暂无摘要')}</p></div></div></td><td><span class="badge ${p.deletedAt ? 'trash' : p.visible ? 'published' : 'draft'}">${p.deletedAt ? '已回收' : p.visible ? '已发布' : '草稿'}</span>${p.pinned ? '<small class="pinned">置顶</small>' : ''}</td><td><div class="tags">${
+          tags(p)
+            .slice(0, 3)
+            .map((t) => `<span>${esc(t)}</span>`)
+            .join('') || '—'
+        }</div></td><td class="date">${new Date(p.updatedAt).toLocaleDateString('zh-CN')}</td><td><div class="row-actions">${p.deletedAt ? `<button data-action="restore" data-id="${p.id}">恢复</button>` : `<a href="${write}?id=${p.id}">编辑</a>${p.visible ? `<a href="/blog/${encodeURIComponent(p.slug)}" target="_blank">查看 ↗</a>` : ''}<button data-action="${p.visible ? 'draft' : 'publish'}" data-id="${p.id}">${p.visible ? '下架' : '发布'}</button><button data-action="duplicate" data-id="${p.id}">复制</button><button class="danger" data-action="trash" data-id="${p.id}">回收</button>`}</div></td></tr>`,
+    )
+    .join('');
+  $('empty').hidden = !!current.length;
+  $('total').textContent = `${filtered.length} 篇文章`;
+  $('page-info').textContent = `每页 10 篇 · 共 ${filtered.length} 篇`;
+  $('page').textContent = `${page} / ${pages}`;
+  ($('prev') as HTMLButtonElement).disabled = page === 1;
+  ($('next') as HTMLButtonElement).disabled = page === pages;
+  selection();
+}
+async function load() {
+  const r = await fetch('/api/admin/posts');
+  if (!r.ok) throw new Error('读取失败，请刷新页面或重新登录');
+  posts = await r.json();
+  const filter = $('tag') as HTMLSelectElement;
+  const value = filter.value;
+  filter.innerHTML =
+    '<option value="">全部标签</option>' +
+    [...new Set(posts.flatMap(tags))]
+      .map((t) => `<option value="${esc(t)}">${esc(t)}</option>`)
+      .join('');
+  filter.value = value;
+  render();
+}
+async function action(name: string, ids: number[]) {
+  if (busy || !ids.length) return;
+  if (
+    name === 'trash' &&
+    !confirm(`将 ${ids.length} 篇文章移入回收站？文章将从前台移除，可以恢复。`)
+  )
+    return;
+  busy = true;
+  selection();
+  try {
+    const r = await fetch('/api/admin/posts', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: name, ids }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error);
+    await load();
+    $('feedback').textContent =
+      name === 'trash'
+        ? '已移入回收站，可在回收站恢复'
+        : name === 'restore'
+          ? '已恢复到草稿箱'
+          : '操作成功';
+  } catch (e) {
+    $('feedback').textContent = (e as Error).message;
+  } finally {
+    busy = false;
+    selection();
+  }
+}
+$('tabs').onclick = (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLButtonElement>(
+    '[data-status]',
+  );
+  if (!b) return;
+  status = b.dataset.status!;
+  page = 1;
+  document
+    .querySelectorAll('[data-status]')
+    .forEach((t) => t.classList.toggle('active', t === b));
+  render();
+};
+['search', 'tag', 'sort'].forEach((id) =>
+  $(id).addEventListener(id === 'search' ? 'input' : 'change', () => {
+    page = 1;
+    render();
+  }),
+);
+$('rows').addEventListener('change', (e) => {
+  const box = e.target as HTMLInputElement;
+  const id = Number(box.dataset.id);
+  if (box.checked) selected.add(id);
+  else selected.delete(id);
+  selection();
+});
+$('rows').onclick = (e) => {
+  const b = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
+  if (b) action(b.dataset.action!, [Number(b.dataset.id)]);
+};
+$('select-all').onchange = () => {
+  const checked = ($('select-all') as HTMLInputElement).checked;
+  document.querySelectorAll<HTMLInputElement>('.select-row').forEach((b) => {
+    b.checked = checked;
+    if (checked) selected.add(Number(b.dataset.id));
+    else selected.delete(Number(b.dataset.id));
+  });
+  selection();
+};
+document
+  .querySelectorAll<HTMLElement>('[data-batch]')
+  .forEach((b) => (b.onclick = () => action(b.dataset.batch!, [...selected])));
+$('prev').onclick = () => {
+  page--;
+  render();
+};
+$('next').onclick = () => {
+  page++;
+  render();
+};
+load().catch((e) => ($('feedback').textContent = e.message));
+</script>
+<style is:global>
+  @scope (.content-hub) {
+  .content-hub .metrics article{border:1px solid #e3e9e7;background:white;border-radius:12px;padding:23px;display:grid;gap:12px}.content-hub .metrics span{font-size:12px;color:#64766e}.content-hub .metrics strong{font-size:34px;font-weight:600;letter-spacing:-.06em;color:#244c40}.content-hub .metrics small{font-size:11px;color:#98a29c}
+  .content-hub{max-width:1600px;margin:auto}.hub-header{display:flex;justify-content:space-between;gap:24px;align-items:center;margin:8px 0 32px}.eyebrow{font-size:10px;font-weight:700;letter-spacing:.2em;color:#658078}.hub-header h2{font-size:clamp(22px,2.2vw,32px);letter-spacing:-.04em;margin:12px 0;color:#172b26}.intro{color:#7b8794;font-size:13px}.primary{background:#244c40;color:#fff;padding:13px 20px;border-radius:9px;font-size:13px;white-space:nowrap;box-shadow:0 4px 10px #244c401a}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:30px}.metrics article{border:1px solid #e3e9e7;background:white;border-radius:12px;padding:23px;display:grid;gap:12px}.metrics span{font-size:12px;color:#64766e}.metrics strong{font-size:34px;font-weight:600;letter-spacing:-.06em;color:#244c40}.metrics small{font-size:11px;color:#98a29c}.library{border:1px solid #e1e7e5;border-radius:12px;background:white;overflow:hidden}.library-top{padding:0 24px;border-bottom:1px solid #edf0ef;display:flex;align-items:center;justify-content:space-between}nav{display:flex;gap:28px}nav button{border:0;border-bottom:2px solid transparent;padding:20px 0;background:transparent;color:#84908b;font-size:13px}nav button.active{color:#244c40;border-bottom-color:#244c40;font-weight:650}#total{font-size:11px;color:#8b9590}.filters{display:flex;gap:12px;padding:22px 24px}.filters input,.filters select{padding:11px 14px;border:1px solid #e2e7e4;border-radius:7px;background:#fff;font-size:12px;color:#5b6b62}.filters input{flex:1;min-width:100px}.batch{padding:0 24px 18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.batch span{font-size:11px;color:#89938e;margin-right:12px}.batch button,.pagination button{border:1px solid #e4e9e6;border-radius:5px;background:#fff;padding:6px 11px;font-size:11px;color:#617268}button{cursor:pointer}button:disabled{opacity:.4;cursor:not-allowed}.table-scroll{overflow:auto}table{width:100%;border-collapse:collapse;text-align:left}th{background:#f8faf9;font-size:10px;color:#89978e;font-weight:500;padding:14px 16px;white-space:nowrap}td{padding:22px 16px;border-bottom:1px solid #f0f3f1;font-size:12px}th:first-child,td:first-child{padding-left:24px;width:42px}.title-cell{display:flex;align-items:center;gap:14px;min-width:250px}.article-mark{display:grid;place-items:center;flex-shrink:0;width:42px;height:48px;border:1px solid #e6ece8;border-radius:6px;background:#f6f8f5;color:#78907d}.title-cell a{font-weight:650;color:#273d31}.title-cell p{color:#98a29b;font-size:11px;margin-top:7px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.badge{display:inline-block;border-radius:5px;padding:4px 8px;font-size:10px;white-space:nowrap}.published{color:#468065;background:#edf6ef}.draft{color:#ac8953;background:#faf4e8}.trash{color:#87908b;background:#f0f2f1}.pinned{display:block;margin-top:5px;color:#ac8953;font-size:10px}.tags{display:flex;gap:4px;flex-wrap:wrap}.tags span{padding:3px 6px;background:#f5f7f6;border:1px solid #eaf0eb;border-radius:4px;color:#7e8e82;font-size:10px}.date{font-size:11px;color:#97a19a;white-space:nowrap}.row-actions{display:flex;justify-content:flex-end;gap:12px;align-items:center;white-space:nowrap}.row-actions a,.row-actions button{background:none;border:0;padding:0;font-size:11px;color:#5e796a}.danger{color:#b17c72!important}.pagination{display:flex;justify-content:space-between;align-items:center;padding:20px 24px;color:#9ba49d;font-size:11px}.pagination div{display:flex;align-items:center;gap:16px}#empty{padding:65px 20px;text-align:center;color:#839087}#empty span{font-size:36px;color:#a3b8a8}#empty h3{font-size:16px;margin:14px}#empty p{font-size:12px}#empty a{display:inline-block;margin-top:18px;color:#244c40;font-size:12px}#feedback{min-height:24px;color:#537862;font-size:12px;margin-top:14px}[hidden]{display:none!important}@media(max-width:900px){.metrics{gap:10px}.metrics article{padding:16px}.hub-header{align-items:flex-start}.library-top{padding:0 16px}nav{gap:16px}.filters{flex-wrap:wrap;padding:16px}.filters input{flex-basis:100%}#total{display:none}}@media(max-width:600px){.metrics{grid-template-columns:1fr 1fr}.hub-header{flex-direction:column}.metrics strong{font-size:26px}.hub-header h2{font-size:22px}nav{gap:14px}.pagination{padding:16px}.intro{line-height:1.7}}
+  }
+</style>
+<style is:global>
+  .content-hub #metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:24px 0}.content-hub #metrics article{display:grid;gap:12px;padding:22px 24px;background:white;border:1px solid #e6e8e5;border-radius:9px}.content-hub #metrics article span{font-size:12px;color:#787f77}.content-hub #metrics article strong{font-size:32px;line-height:1;font-weight:600;letter-spacing:-.04em;color:#303d34}.content-hub #metrics article small{font-size:11px;color:#a1a79f}.content-hub .filters select{appearance:none;padding:10px 40px 10px 14px;min-width:120px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23717a73' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}.content-hub .row-actions{gap:6px;justify-content:flex-end;flex-wrap:wrap;max-width:250px;min-width:170px}.content-hub .row-actions a,.content-hub .row-actions button{display:inline-flex;align-items:center;justify-content:center;min-height:29px;padding:5px 8px;border:1px solid #e7eae6;border-radius:5px;background:#fff;font-size:11px;color:#6d796f;white-space:nowrap}.content-hub .row-actions>a:first-child{background:#f2f5f0;border-color:#dce4d8;color:#3c5d43}.content-hub .row-actions button:hover,.content-hub .row-actions a:hover{background:#f5f6f3}.content-hub .hub-header h2{font-size:24px}.content-hub .hub-header{margin-bottom:18px}.sidebar-nav{display:block!important}.sidebar-nav .menu-item{white-space:nowrap}@media(max-width:600px){.content-hub #metrics{grid-template-columns:repeat(2,1fr);gap:10px}.content-hub #metrics article{padding:18px}}
+</style>

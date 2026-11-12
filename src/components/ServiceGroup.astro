@@ -1,0 +1,84 @@
+---
+/**
+ * 服务分组（Editorial 区块）
+ * mono 编号区头（01 / 02 …）+ hairline 分隔的条目区域；
+ * @param category 分类名（同时作为区头标题）
+ * @param services 该分类下的服务列表
+ * @param index 区块编号（用于 mono 编号显示，从 1 开始）
+ * @param variant 'card' 网格条目（默认）| 'list' 单列表格行
+ */
+import ServiceCard from './ServiceCard.astro';
+import ServiceRow from './ServiceRow.astro';
+import type { Service } from '../config/services';
+
+interface Props {
+  category: string;
+  services: Service[];
+  index?: number;
+  variant?: 'card' | 'list';
+}
+
+const { category, services, index, variant = 'card' } = Astro.props;
+/** 生成用于 aria-labelledby 的合法 id */
+const groupId = `group-${category.toLowerCase().replace(/\s+/g, '-')}`;
+---
+
+<section class="group container" aria-labelledby={groupId}>
+  <h2 class="group-head" id={groupId}>
+    {index !== undefined && <span class="group-index">{String(index).padStart(2, '0')}</span>}
+    <span class="group-title">{category}</span>
+  </h2>
+  <div class:list={['group-body', { list: variant === 'list' }]}>
+    {
+      variant === 'card'
+        ? services.map((service) => <ServiceCard service={service} />)
+        : services.map((service) => <ServiceRow service={service} />)
+    }
+  </div>
+</section>
+
+<style>
+  .group {
+    margin-bottom: var(--space-section);
+  }
+
+  .group:last-child {
+    margin-bottom: 0;
+  }
+
+  /* 区头：mono 大写小字，编号用 accent 点睛 */
+  .group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--color-muted);
+  }
+
+  .group-index {
+    color: var(--color-accent);
+  }
+
+  /* 区块底部补 hairline，使每区形成完整闭合 */
+  .group-body {
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  /* 网格条目：Tablet 起双列，Mobile 单列 */
+  .group-body:not(.list) {
+    display: grid;
+    grid-template-columns: 1fr;
+    column-gap: var(--grid-gap);
+  }
+
+  @media (min-width: 768px) {
+    .group-body:not(.list) {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+</style>
